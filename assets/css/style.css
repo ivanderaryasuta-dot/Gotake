@@ -1,0 +1,844 @@
+/* ============================================================
+   assets/css/style.css  —  THE LOOK OF THE WEBSITE
+   ------------------------------------------------------------
+   HOW TO READ THIS FILE
+   CSS decides colours, sizes and layout. Each block looks like:
+
+        .some-class {  property: value;  }
+
+   and it is applied to every HTML element that has
+   class="some-class". The file is split into numbered sections;
+   the table of contents is right below.
+
+   WHAT CHANGED FROM YOUR OLD VERSION
+   - The old dark theme is replaced with the light-blue + yellow
+     design from PBL.pdf.
+   - Your old class names (.card, .tabs, .tab, .badge, .btn,
+     .modal, .form-control, .grid-cards ...) are KEPT, so the
+     framework is the same; they just look different now.
+
+   CONTENTS
+     1. Colour variables
+     2. Global reset
+     3. Top bar (blue gradient)
+     4. Sidebar + page layout
+     5. Typography
+     6. Hero banners + stat cards
+     7. Buttons
+     8. Forms, switches, alerts
+     9. Tables, badges, tabs, pagination
+    10. Item catalog cards
+    11. Panels (profile / settings)
+    12. Charts
+    13. Modals
+    14. Login / register / forgot-password layout
+    15. Splash screen
+    16. Image placeholders (blank boxes for your images)
+    17. Responsive (tablet + phone)
+   ============================================================ */
+
+
+/* ============================================================
+   1. COLOUR VARIABLES
+   Change a colour here and it changes on EVERY page.
+   ============================================================ */
+:root {
+    --bg:            #E9F0FB;   /* page background (very light blue)      */
+    --ink:           #0A0A0A;   /* main text colour                        */
+    --muted:         #4A5563;   /* secondary / helper text                 */
+
+    --blue:          #1E6FD9;   /* bright blue (top bar start, links)      */
+    --blue-dark:     #14509A;   /* dark blue (top bar end)                 */
+    --hero-from:     #1A5DB5;   /* hero banner gradient: left              */
+    --hero-to:       #6094D2;   /* hero banner gradient: right             */
+    --blue-button:   #3F6FA8;   /* "Request to borrow" button              */
+
+    --yellow:        #FFBF00;   /* brand yellow (buttons, stat cards)      */
+    --yellow-dark:   #E3A900;   /* yellow on hover                         */
+
+    --card-grey:     #D9D9D9;   /* item cards, chips                       */
+    --table-head:    #78A2CD;   /* table header row                        */
+    --table-row:     #F3F7FC;   /* table body rows                         */
+    --nav-active:    #CCE4FA;   /* selected sidebar item                   */
+    --line:          #1B1B1B;   /* thin dark outlines used in the design   */
+
+    /* status colours: "-bg" is the pale pill, the other is the text */
+    --success:       #1F9D3A;   --success-bg: #BDEBC9;
+    --pending:       #B88A00;   --pending-bg: #F6EDC2;
+    --danger:        #C0141C;   --danger-bg:  #F5ABAB;
+    --info:          #1E6FD9;   --info-bg:    #CFE0F7;
+    --neutral:       #5B6573;   --neutral-bg: #DDE3EB;
+
+    --sidebar-width: 216px;     /* width of the left menu                  */
+    --topbar-height: 90px;      /* height of the blue top bar              */
+}
+
+
+/* ============================================================
+   2. GLOBAL RESET
+   Removes the browser's default margins so every browser starts equal.
+   ============================================================ */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;      /* width includes padding + border (easier maths) */
+    font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+body {
+    background-color: var(--bg);
+    color: var(--ink);
+    overflow-x: hidden;          /* never show a sideways scrollbar */
+}
+
+a { color: inherit; }
+
+/* Used by the JavaScript filters (search box / category chips) to hide things */
+.hidden-by-search, .hidden-by-filter { display: none !important; }
+
+/* Visible keyboard focus (accessibility): shows a ring when you Tab to something */
+a:focus-visible, button:focus-visible, input:focus-visible,
+select:focus-visible, textarea:focus-visible {
+    outline: 3px solid var(--blue);
+    outline-offset: 2px;
+}
+
+
+/* ============================================================
+   3. TOP BAR
+   The blue gradient strip across the top with the logo (left)
+   and the round user avatar (right).
+   ============================================================ */
+.topbar {
+    position: fixed;             /* stays at the top while the page scrolls */
+    top: 0; left: 0; right: 0;
+    height: var(--topbar-height);
+    background: linear-gradient(90deg, var(--blue) 0%, var(--blue-dark) 100%);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 56px;
+    z-index: 1100;               /* above the sidebar */
+}
+
+/* On login/register pages the bar is part of the normal flow, not fixed */
+.topbar.topbar-static { position: static; }
+
+.brand { display: flex; align-items: center; text-decoration: none; }
+
+/* Round avatar button (top right) */
+.user-avatar {
+    width: 50px; height: 50px;
+    border-radius: 50%;
+    background: #0A0A0A;
+    color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700;
+    font-size: 0.95rem;
+    text-decoration: none;
+    border: 2px solid rgba(255,255,255,0.25);
+}
+
+/* Hamburger button: hidden on desktop, shown on phones (section 17) */
+.menu-toggle {
+    display: none;
+    background: none;
+    border: none;
+    color: #fff;
+    font-size: 1.8rem;
+    cursor: pointer;
+    margin-right: 12px;
+}
+.topbar-left { display: flex; align-items: center; }
+
+
+/* ============================================================
+   4. SIDEBAR + PAGE LAYOUT
+   ============================================================ */
+.app-container { display: flex; min-height: 100vh; }
+
+.sidebar {
+    width: var(--sidebar-width);
+    background: #fff;
+    position: fixed;
+    top: var(--topbar-height);   /* starts just below the top bar */
+    left: 0;
+    bottom: 0;
+    border-right: 1.5px solid var(--line);
+    overflow-y: auto;
+    z-index: 1000;
+    transition: transform 0.3s ease;   /* smooth slide on phones */
+}
+
+.sidebar-title {
+    padding: 20px 16px 16px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    letter-spacing: 0.2px;
+    border-bottom: 1.5px solid var(--line);
+    margin-bottom: 14px;
+}
+
+.sidebar nav { display: flex; flex-direction: column; gap: 6px; }
+
+.sidebar nav a {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px 10px 12px;
+    font-size: 0.88rem;
+    font-weight: 600;
+    text-decoration: none;
+    color: var(--ink);
+    border-left: 4px solid transparent;
+    transition: background 0.15s;
+}
+.sidebar nav a:hover { background: #F0F5FC; }
+
+/* The page you are on */
+.sidebar nav a.active {
+    background: var(--nav-active);
+    border-left-color: var(--blue);
+}
+
+/* The little square in front of each menu item.
+   It is an EMPTY BOX on purpose (icon placeholder, like in the design).
+   To use real icons, put an <img> or icon inside the <span class="nav-icon"> in includes/header.php */
+.nav-icon {
+    width: 14px; height: 14px;
+    border: 1.5px solid var(--line);
+    border-radius: 3px;
+    flex-shrink: 0;
+}
+
+/* Close (x) button inside the sidebar: phones only */
+.sidebar-close {
+    display: none;
+    position: absolute;
+    top: 8px; right: 10px;
+    background: none; border: none;
+    font-size: 1.6rem;
+    cursor: pointer;
+}
+
+/* Dark screen behind the sidebar on phones */
+.overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.55);
+    z-index: 999;
+}
+.overlay.active { display: block; }
+
+.main-content {
+    flex: 1;
+    min-width: 0;                                 /* lets wide tables scroll instead of stretching the page */
+    margin-left: var(--sidebar-width);            /* leave room for the sidebar */
+    padding-top: var(--topbar-height);            /* leave room for the top bar */
+    transition: margin-left 0.3s ease;
+}
+
+.content { padding: 24px 28px 48px; }
+
+
+/* ============================================================
+   5. TYPOGRAPHY
+   ============================================================ */
+h1 { font-size: 2.1rem; font-weight: 700; line-height: 1.15; }
+h2 { font-size: 1.3rem; font-weight: 700; margin-bottom: 6px; }
+h3 { font-size: 1.1rem; font-weight: 700; }
+
+.subtitle {
+    color: var(--ink);
+    opacity: 0.8;
+    margin-bottom: 22px;
+    font-size: 0.95rem;
+    font-weight: 500;
+}
+.muted { color: var(--muted); }
+
+.section-title { font-size: 1.1rem; font-weight: 700; margin: 30px 0 12px; }
+
+
+/* ============================================================
+   6. HERO BANNERS + STAT CARDS
+   The big rounded blue (or yellow) banner at the top of pages.
+   ============================================================ */
+.hero {
+    background: linear-gradient(90deg, var(--hero-from) 0%, var(--hero-from) 40%, var(--hero-to) 100%);
+    color: #fff;
+    border-radius: 44px;
+    padding: 34px 44px;
+    margin-bottom: 30px;
+    box-shadow: 0 16px 32px rgba(20, 70, 140, 0.28);
+}
+.hero h1 { color: #fff; }
+.hero .subtitle { color: #fff; opacity: 1; margin-bottom: 18px; }
+.hero .welcome { font-size: 1.15rem; font-weight: 600; margin: 8px 0 18px; }
+
+/* Yellow variant (admin dashboard). Dark text keeps it readable. */
+.hero.hero-yellow { background: var(--yellow); color: #1b2a41; box-shadow: 0 16px 32px rgba(180, 130, 0, 0.25); }
+.hero.hero-yellow h1,
+.hero.hero-yellow .subtitle { color: #1b2a41; }
+
+/* Row at the top of a hero with a title on the left and search on the right */
+.hero-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; flex-wrap: wrap; }
+
+/* A row of stat cards inside a hero */
+.stat-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 26px;
+    margin-top: 18px;
+}
+
+.stat-card {
+    background: var(--yellow);
+    color: var(--ink);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 12px 18px 14px;
+}
+.stat-card .stat-label { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; }
+.stat-card .stat-value { font-size: 2rem; font-weight: 700; line-height: 1.2; }
+.stat-card .stat-value.text { font-size: 1.25rem; padding-top: 6px; }
+
+/* Blue stat card (used on the yellow admin hero + reports page) */
+.stat-card.blue {
+    background: linear-gradient(90deg, var(--blue) 0%, var(--blue-dark) 100%);
+    color: #fff;
+    border-radius: 10px;
+}
+
+.hero-actions { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 26px; }
+
+/* Old class names from the previous version, kept so nothing breaks */
+.grid-cards { display: grid; gap: 20px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); margin-top: 20px; }
+.card { background: #fff; padding: 20px; border-radius: 12px; border: 1px solid rgba(0,0,0,0.12); }
+
+
+/* ============================================================
+   7. BUTTONS
+   ============================================================ */
+.btn {
+    display: inline-block;
+    padding: 9px 18px;
+    border-radius: 8px;
+    border: 1px solid transparent;
+    cursor: pointer;
+    font-weight: 700;
+    font-size: 0.85rem;
+    text-decoration: none;
+    text-align: center;
+    transition: 0.15s;
+}
+
+/* Yellow = main action (Log in, Submit, Save ...) */
+.btn-primary { background: var(--yellow); color: #000; border-color: var(--line); }
+.btn-primary:hover { background: var(--yellow-dark); }
+
+/* Blue = secondary action (Browse catalog, Edit profile ...) */
+.btn-blue { background: var(--blue-button); color: #fff; border-color: var(--line); }
+.btn-blue:hover { background: #335b8e; }
+
+/* White with dark outline = cancel / neutral */
+.btn-outline { background: #fff; border-color: var(--line); color: #000; }
+.btn-outline:hover { background: #EEF3FA; }
+
+.btn-danger { background: var(--danger); color: #fff; border-color: var(--danger); }
+
+.btn-sm { padding: 6px 12px; font-size: 0.78rem; }
+.btn-block { display: block; width: 100%; padding: 13px; font-size: 1.05rem; font-weight: 500; }
+.btn[disabled], .btn.disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btn-row { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 22px; }
+
+/* Plain text-style action links used in tables ("Edit", "Delete") */
+.link-action {
+    background: none; border: none; cursor: pointer;
+    font-size: 0.8rem; font-weight: 700; color: var(--ink);
+    padding: 2px 4px;
+}
+.link-action:hover { color: var(--blue); text-decoration: underline; }
+.link-action.danger:hover { color: var(--danger); }
+
+
+/* ============================================================
+   8. FORMS, SWITCHES, ALERTS
+   ============================================================ */
+.form-group { margin-bottom: 16px; }
+
+.form-group label {
+    display: block;
+    margin-bottom: 5px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.2px;
+}
+.form-group label small { text-transform: none; font-weight: 500; color: var(--muted); }
+
+.form-control {
+    width: 100%;
+    padding: 12px 14px;
+    background: var(--bg);
+    border: 1.5px solid var(--line);
+    color: var(--ink);
+    border-radius: 4px;
+    font-size: 0.95rem;
+    outline: none;
+}
+.form-control:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(30,111,217,0.2); }
+.form-control::placeholder { color: #5b6573; }
+
+/* Error state: red border + red message under the field */
+.form-control.has-error { border-color: var(--danger); }
+.field-error { color: #E01616; font-size: 0.82rem; margin-top: 4px; font-weight: 500; }
+.field-hint  { color: var(--muted); font-size: 0.78rem; margin-top: 4px; }
+
+textarea.form-control { resize: vertical; font-family: inherit; }
+
+/* Checkbox + label on one line ("Remember me", "I agree ...") */
+.check-row { display: flex; align-items: center; gap: 8px; font-size: 0.82rem; cursor: pointer; }
+.check-row input[type="checkbox"] { width: 17px; height: 17px; accent-color: var(--blue); }
+
+/* Two-column / item-row grids (stack on phones) */
+.grid-two-col  { display: grid; gap: 20px; grid-template-columns: 1fr 1fr; }
+.grid-form-row { display: grid; gap: 10px; grid-template-columns: 3fr 1fr auto; align-items: end; margin-bottom: 10px; }
+
+/* ---- ON/OFF SWITCH ----
+   HTML:  <label class="switch"><input type="checkbox" name="x"><span class="slider"></span></label> */
+.switch { position: relative; display: inline-block; width: 46px; height: 26px; flex-shrink: 0; }
+.switch input { opacity: 0; width: 0; height: 0; }
+.slider {
+    position: absolute; inset: 0;
+    background: #777;
+    border-radius: 26px;
+    cursor: pointer;
+    transition: 0.2s;
+}
+.slider::before {
+    content: "";
+    position: absolute;
+    width: 20px; height: 20px;
+    left: 3px; top: 3px;
+    background: #fff;
+    border-radius: 50%;
+    transition: 0.2s;
+}
+.switch input:checked + .slider { background: #138a28; }
+.switch input:checked + .slider::before { transform: translateX(20px); }
+.switch input:focus-visible + .slider { outline: 3px solid var(--blue); outline-offset: 2px; }
+
+/* A row with a label on the left and a switch on the right */
+.switch-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 12px 0;
+    border-top: 1px solid var(--line);
+    font-weight: 700; font-size: 0.9rem;
+    gap: 16px;
+}
+
+/* ---- ALERT BOXES (success / error / info messages) ---- */
+.alert { padding: 13px 16px; border-radius: 8px; margin-bottom: 20px; font-size: 0.92rem; font-weight: 500; border: 1px solid transparent; }
+.alert-success { background: var(--success-bg); color: #14692A; border-color: #8fd5a1; }
+.alert-danger  { background: var(--danger-bg);  color: #8c0e14; border-color: #e58d8d; }
+.alert-info    { background: var(--blue);       color: #fff; border-color: var(--line); }   /* the blue banner in "My Borrowings" */
+.alert a { color: inherit; font-weight: 700; }
+
+
+/* ============================================================
+   9. TABLES, BADGES, TABS, PAGINATION
+   ============================================================ */
+/* The wrapper lets a wide table scroll sideways on phones */
+.table-wrapper {
+    width: 100%;
+    overflow-x: auto;
+    border-radius: 12px;
+    background: var(--table-row);
+    border: 1.5px solid var(--line);
+    -webkit-overflow-scrolling: touch;
+}
+
+table { width: 100%; border-collapse: collapse; min-width: 700px; }
+
+th, td {
+    padding: 14px 16px;
+    text-align: left;
+    border-bottom: 1px solid var(--line);
+    white-space: nowrap;           /* keep each cell on one line */
+    font-size: 0.85rem;
+}
+
+th {
+    background: var(--table-head);
+    color: #000;
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+td { font-weight: 600; }
+tr:last-child td { border-bottom: none; }
+tbody tr:hover td { background: #E8F0FA; }
+
+/* Status pills: Pending / Approved / Rejected / Returned ... */
+.badge {
+    padding: 4px 16px;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    display: inline-block;
+    background: var(--neutral-bg);
+    color: var(--neutral);
+}
+.badge.pending, .badge.requested   { background: var(--pending-bg); color: var(--pending); }
+.badge.approved, .badge.active,
+.badge.available                   { background: var(--success-bg); color: var(--success); }
+.badge.borrowed                    { background: var(--info-bg);    color: var(--info); }
+.badge.returned, .badge.returned_late { background: var(--neutral-bg); color: var(--neutral); }
+.badge.rejected, .badge.overdue,
+.badge.suspended, .badge.unavailable { background: var(--danger-bg); color: var(--danger); }
+.badge.plain { background: transparent; color: var(--ink); padding: 0; }
+
+/* ---- FILTER TABS / CHIPS (All | Pending | Approved ...) ---- */
+.tabs { display: flex; gap: 12px; margin-bottom: 22px; flex-wrap: wrap; align-items: center; }
+
+.tab {
+    display: inline-block;
+    padding: 8px 20px;
+    border-radius: 20px;
+    background: var(--card-grey);
+    color: var(--ink);
+    cursor: pointer;
+    border: none;
+    font-size: 0.85rem;
+    font-weight: 700;
+    text-decoration: none;
+    transition: 0.15s;
+}
+.tab:hover { background: #c9c9c9; }
+.tab.active { background: var(--blue); color: #fff; }
+
+/* Search / filter box shaped like a pill, pushed to the right of the tab row */
+.pill-input {
+    background: var(--card-grey);
+    border: none;
+    border-radius: 20px;
+    padding: 9px 20px;
+    font-size: 0.85rem;
+    font-weight: 700;
+    min-width: 200px;
+    outline: none;
+    color: var(--ink);
+}
+.pill-input::placeholder { color: #333; }
+.push-right { margin-left: auto; }
+
+/* ---- PAGINATION  [1] [2] ---- */
+.pagination { display: flex; gap: 10px; margin-top: 16px; }
+.pagination a {
+    width: 36px; height: 36px;
+    display: flex; align-items: center; justify-content: center;
+    border: 1px solid var(--blue);
+    border-radius: 6px;
+    color: var(--blue);
+    text-decoration: none;
+    font-weight: 700;
+    font-size: 0.85rem;
+    background: #fff;
+}
+.pagination a.active { background: linear-gradient(90deg, var(--blue), var(--blue-dark)); color: #fff; }
+
+
+/* ============================================================
+   10. ITEM CATALOG CARDS  (student_catalog.php + borrow request)
+   ============================================================ */
+.catalog-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 30px 22px;
+}
+
+.item-card {
+    background: var(--card-grey);
+    border-radius: 14px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+/* White photo area at the top of the card */
+.item-photo {
+    background: #fff;
+    height: 112px;
+    border-radius: 0 0 14px 14px;
+    display: flex; align-items: center; justify-content: center;
+    overflow: hidden;
+}
+.item-photo img { max-width: 100%; max-height: 100%; object-fit: contain; }
+
+.item-body { padding: 12px 12px 14px; display: flex; flex-direction: column; gap: 3px; flex: 1; }
+.item-category { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; color: #0A7CFF; }
+.item-name { font-size: 1.05rem; font-weight: 700; }
+.item-meta { font-size: 0.72rem; font-weight: 700; }
+.item-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; gap: 8px; }
+.item-footer .badge { font-size: 0.68rem; padding: 4px 18px; }
+.item-footer .btn { background: #3F6B9E; color: #fff; padding: 7px 14px; font-size: 0.75rem; border-radius: 6px; }
+.item-footer .btn.disabled { background: #8A9BB0; }
+
+
+/* ============================================================
+   11. PANELS  (bordered boxes used by profile + settings pages)
+   ============================================================ */
+.page-narrow { max-width: 880px; }
+
+.panel {
+    background: var(--bg);
+    border: 1.5px solid var(--line);
+    border-radius: 12px;
+    padding: 20px 22px;
+    margin-bottom: 24px;
+}
+.panel > h3 { margin-bottom: 12px; }
+
+.breadcrumb { font-size: 1.05rem; margin: 6px 0 20px; color: #222; }
+.breadcrumb strong { font-weight: 800; }
+
+/* Profile header: big round avatar + name */
+.profile-head { display: flex; align-items: center; gap: 18px; margin: 12px 0 24px; }
+.avatar-lg {
+    width: 80px; height: 80px;
+    border-radius: 50%;
+    background: #0A84FF;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.6rem; font-weight: 700;
+    flex-shrink: 0;
+}
+.avatar-lg.grey { background: #D3D3D3; }
+.profile-head .name { font-size: 1.3rem; font-weight: 600; }
+.profile-head .sub  { font-size: 1.05rem; }
+
+/* Read-only "field" used on the profile page */
+.readonly-field {
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 12px 14px;
+    font-weight: 700;
+    font-size: 0.88rem;
+    margin-bottom: 14px;
+}
+.readonly-label { font-size: 0.75rem; font-weight: 700; margin-bottom: 4px; text-transform: uppercase; }
+
+/* Two-column layout: small side card + form (Edit profile / Change password) */
+.split-layout { display: grid; grid-template-columns: 300px 1fr; gap: 28px; align-items: start; }
+.side-card {
+    border: 1.5px solid var(--line);
+    border-radius: 12px;
+    padding: 24px 16px;
+    text-align: center;
+    min-height: 260px;
+}
+.side-card .avatar-lg { margin: 0 auto 10px; }
+.side-card .name { font-size: 1.3rem; font-weight: 700; }
+.side-card .id   { font-weight: 700; font-size: 0.95rem; margin-bottom: 12px; }
+.split-layout .form-control { background: transparent; }
+
+
+/* ============================================================
+   12. CHARTS  (pure CSS bars: no library needed)
+   Bar height is set from PHP with style="height: 60%".
+   Colour: green = high month, yellow = medium, red = low.
+   ============================================================ */
+.chart-box {
+    border: 1.5px solid var(--line);
+    border-radius: 10px;
+    padding: 20px 20px 12px;
+    background: var(--bg);
+}
+.bar-chart { display: flex; justify-content: space-around; align-items: flex-end; height: 190px; gap: 10px; }
+.bar-col { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; flex: 1; }
+.bar { width: 30px; border-radius: 5px; min-height: 8px; background: #FFBF00; }
+.bar.high { background: #2DA43C; }
+.bar.mid  { background: #FFBF00; }
+.bar.low  { background: #E02424; }
+.bar-value { font-size: 0.75rem; font-weight: 700; margin-bottom: 4px; }
+.bar-label { font-size: 0.78rem; font-weight: 700; margin-top: 8px; }
+
+/* Ranking table inside a bordered box (Reports > Top borrowed items) */
+.plain-table-box { border: 1.5px solid var(--line); border-radius: 10px; background: var(--bg); overflow-x: auto; }
+.plain-table-box table { min-width: 500px; }
+.plain-table-box th { background: transparent; border-bottom: none; font-weight: 600; }
+.plain-table-box td { border-bottom: none; }
+
+
+/* ============================================================
+   13. MODALS  (pop-up dialogs)
+   Hidden until JavaScript adds the class "active".
+   ============================================================ */
+.modal {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.6);
+    justify-content: center;
+    align-items: center;
+    z-index: 2000;
+    padding: 15px;
+}
+.modal.active { display: flex; }
+
+.modal-content {
+    background: #fff;
+    padding: 28px;
+    border-radius: 12px;
+    width: 500px;
+    max-width: 100%;
+    max-height: 90vh;
+    overflow-y: auto;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+    border: 1.5px solid var(--line);
+}
+.modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; }
+.modal-header h2 { margin: 0; }
+.close-btn { background: none; border: none; font-size: 1.6rem; cursor: pointer; color: var(--muted); }
+.close-btn:hover { color: #000; }
+.modal-error { color: var(--danger); font-size: 0.88rem; margin-bottom: 12px; font-weight: 600; display: none; }
+
+
+/* ============================================================
+   14. LOGIN / REGISTER / FORGOT-PASSWORD LAYOUT
+   Left half = big picture area. Right half = the form.
+   ============================================================ */
+.auth-body { min-height: 100vh; display: flex; flex-direction: column; background: var(--bg); }
+
+.auth-wrap { flex: 1; display: grid; grid-template-columns: 1fr 1fr; }
+
+.auth-art {
+    background: var(--card-grey);
+    display: flex; align-items: center; justify-content: center;
+    padding: 30px;
+}
+.auth-art img { max-width: 100%; max-height: 80vh; object-fit: contain; }
+.auth-art .img-placeholder { width: 85%; height: 75%; min-height: 340px; }
+
+.auth-panel { display: flex; align-items: center; justify-content: center; padding: 40px 30px; }
+.auth-card { width: 100%; max-width: 482px; }
+.auth-card h1 { font-size: 1.7rem; margin-bottom: 4px; }
+.auth-card .subtitle { font-weight: 700; font-size: 0.9rem; opacity: 1; margin-bottom: 26px; }
+
+.auth-row { display: flex; justify-content: space-between; align-items: center; margin: 10px 0 24px; font-size: 0.82rem; }
+.auth-row a { text-decoration: none; }
+.auth-row a:hover { text-decoration: underline; }
+.auth-foot { text-align: center; font-size: 0.82rem; margin-top: 28px; }
+.auth-foot a { font-weight: 700; text-decoration: none; }
+.auth-foot a:hover { text-decoration: underline; }
+.auth-foot hr { border: none; border-top: 1px solid #9aa4b2; width: 78%; margin: 22px auto 0; }
+
+/* "Send code" small yellow pill that sits above the code field */
+.code-row { display: flex; justify-content: flex-end; margin-bottom: -4px; }
+.btn-pill {
+    background: var(--yellow); border: none; border-radius: 12px;
+    padding: 2px 12px; font-size: 0.75rem; font-weight: 600; cursor: pointer;
+}
+.btn-pill:hover { background: var(--yellow-dark); }
+
+.dev-code {
+    background: #FFF7D1; border: 1px dashed #C9A020; border-radius: 8px;
+    padding: 10px 14px; font-size: 0.85rem; margin-bottom: 18px;
+}
+
+
+/* ============================================================
+   15. SPLASH SCREEN  (splash.php: logo + loading bar)
+   ============================================================ */
+.splash { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px; background: var(--bg); }
+.splash .brand-logo { width: 300px; height: 90px; }
+.progress { width: 300px; height: 24px; background: #D1D1F0; border-radius: 12px; padding: 3px; }
+.progress-fill { height: 100%; width: 6%; background: #0A84FF; border-radius: 10px; animation: load 2.2s ease-out forwards; }
+@keyframes load { to { width: 100%; } }
+@media (prefers-reduced-motion: reduce) { .progress-fill { animation: none; width: 100%; } }
+
+
+/* ============================================================
+   16. IMAGE PLACEHOLDERS
+   Every spot where an image will go shows a blank dashed box
+   until you add the image file (see assets/img/README.txt).
+   ============================================================ */
+.img-placeholder {
+    border: 1.5px dashed rgba(0,0,0,0.28);
+    background: rgba(255,255,255,0.45);
+    border-radius: 8px;
+}
+.brand-logo { height: 52px; width: 170px; object-fit: contain; }
+/* inside the blue top bar the box needs light lines to be visible */
+.topbar .img-placeholder { border-color: rgba(255,255,255,0.55); background: rgba(255,255,255,0.08); }
+.item-photo .img-placeholder { width: 100%; height: 100%; border: none; border-radius: 0; background: #fff; }
+.side-card .img-placeholder { width: 100%; height: 120px; margin-top: 10px; }
+
+/* Upload box on the admin Settings page */
+.upload-box {
+    display: flex; align-items: center; justify-content: center;
+    min-height: 74px; padding: 14px;
+    border: 1px solid var(--line); border-radius: 8px;
+    font-size: 0.78rem; font-weight: 700; text-align: center;
+    cursor: pointer; background: var(--bg);
+}
+.upload-box input { display: none; }
+
+
+/* ============================================================
+   17. RESPONSIVE
+   Tablet: 1024px and smaller.  Phone: 768px and smaller.
+   ============================================================ */
+@media (max-width: 1024px) {
+    .topbar { padding: 0 28px; }
+    .content { padding: 20px 18px 40px; }
+    .hero { padding: 28px 30px; }
+}
+
+@media (max-width: 768px) {
+    :root { --topbar-height: 70px; }
+
+    .topbar { padding: 0 16px; }
+    .brand-logo { height: 42px; width: 130px; }
+
+    /* Sidebar hides off-screen; the hamburger slides it in */
+    .sidebar { transform: translateX(-100%); box-shadow: 4px 0 20px rgba(0,0,0,0.4); top: 0; padding-top: 10px; z-index: 1200; }
+    .sidebar.open { transform: translateX(0); }
+    .sidebar-close { display: block; }
+    .sidebar-title { padding-top: 34px; }
+    .overlay { z-index: 1150; }
+
+    .menu-toggle { display: block; }
+    .main-content { margin-left: 0; }
+
+    h1 { font-size: 1.6rem; }
+    .hero { border-radius: 28px; padding: 22px 20px; }
+    .stat-row { gap: 12px; }
+
+    th, td { padding: 11px 12px; font-size: 0.8rem; }
+
+    .grid-two-col  { grid-template-columns: 1fr; }
+    .grid-form-row { grid-template-columns: 1fr; gap: 8px; }
+    .split-layout  { grid-template-columns: 1fr; }
+    .modal-content { padding: 20px; width: 100%; }
+    td .btn { display: inline-block; margin: 2px; }
+
+    /* Login pages: hide the big picture, keep the form */
+    .auth-wrap { grid-template-columns: 1fr; }
+    .auth-art  { display: none; }
+    .push-right { margin-left: 0; width: 100%; }
+}
+
+@media (max-width: 480px) {
+    .content { padding: 14px 12px 36px; }
+    /* Tabs scroll sideways instead of wrapping onto many lines */
+    .tabs { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 6px; }
+    .tabs::-webkit-scrollbar { display: none; }
+    .tab { flex-shrink: 0; }
+    .catalog-grid { grid-template-columns: 1fr; }
+    .bar { width: 20px; }
+}
