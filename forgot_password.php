@@ -145,7 +145,7 @@ $code_sent = isset($_SESSION['reset']) && $email !== '' && $_SESSION['reset']['e
             style="position:absolute; left:-9999px;">Reset</button>
 
     <div class="form-group">
-        <label for="email">Email</label>
+        <label for="email">Email <span class="req">*</span></label>
         <input type="email" id="email" name="email" class="form-control <?= $errors['email'] ? 'has-error' : '' ?>"
                placeholder="Enter your email" value="<?= e($email) ?>">
         <?php if ($errors['email']): ?><div class="field-error"><?= e($errors['email']) ?></div><?php endif; ?>
@@ -159,21 +159,21 @@ $code_sent = isset($_SESSION['reset']) && $email !== '' && $_SESSION['reset']['e
     </div>
 
     <div class="form-group">
-        <label for="code">Verification Code</label>
+        <label for="code">Verification Code <span class="req">*</span></label>
         <input type="text" id="code" name="code" class="form-control <?= $errors['code'] ? 'has-error' : '' ?>"
                placeholder="Enter verify code" inputmode="numeric" autocomplete="one-time-code">
         <?php if ($errors['code']): ?><div class="field-error"><?= e($errors['code']) ?></div><?php endif; ?>
     </div>
 
     <div class="form-group">
-        <label for="password">New Password</label>
+        <label for="password">New Password <span class="req">*</span></label>
         <input type="password" id="password" name="password" class="form-control <?= $errors['password'] ? 'has-error' : '' ?>"
                placeholder="Enter your new password" autocomplete="new-password">
         <?php if ($errors['password']): ?><div class="field-error"><?= e($errors['password']) ?></div><?php endif; ?>
     </div>
 
     <div class="form-group">
-        <label for="confirm">Confirm Password</label>
+        <label for="confirm">Confirm Password <span class="req">*</span></label>
         <input type="password" id="confirm" name="confirm" class="form-control <?= $errors['confirm'] ? 'has-error' : '' ?>"
                placeholder="Enter your confirm password" autocomplete="new-password">
         <?php if ($errors['confirm']): ?><div class="field-error"><?= e($errors['confirm']) ?></div><?php endif; ?>

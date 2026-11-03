@@ -64,6 +64,7 @@ if ($role === 'admin') {
         ['index.php',           'Dashboard'],
         ['manage_items.php',    'Manage Items'],
         ['manage_requests.php', 'Manage Request'],
+        ['damage_reports.php',  'Damage Reports'],
         ['user_data.php',       'User Data'],
         ['reports.php',         'Reports'],
         ['settings.php',        'Settings'],
@@ -75,7 +76,6 @@ if ($role === 'admin') {
         ['student_catalog.php',    'Item Catalog'],
         ['student_borrowings.php', 'My Borrowings'],
         ['student_activity.php',   'My Activity'],
-        ['account_settings.php',   'Account Settings'],
         ['profile.php',            'My Profile'],
     ];
 }

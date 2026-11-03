@@ -717,11 +717,13 @@ tbody tr:hover td { background: #E8F0FA; }
 .auth-wrap { flex: 1; display: grid; grid-template-columns: 1fr 1fr; }
 
 .auth-art {
-    background: var(--card-grey);
+    background: #D8D8D8;          /* same grey as the edges of the banner picture, so it blends in */
     display: flex; align-items: center; justify-content: center;
-    padding: 30px;
+    padding: 0;
 }
-.auth-art img { max-width: 100%; max-height: 80vh; object-fit: contain; }
+/* The real picture fills the whole left half (height = screen minus the top bar) */
+.auth-art img { width: 100%; height: 100%; max-height: calc(100vh - var(--topbar-height)); object-fit: contain; }
+/* The blank box shown until you add assets/img/auth-banner.png */
 .auth-art .img-placeholder { width: 85%; height: 75%; min-height: 340px; }
 
 .auth-panel { display: flex; align-items: center; justify-content: center; padding: 40px 30px; }
@@ -773,6 +775,8 @@ tbody tr:hover td { background: #E8F0FA; }
     border-radius: 8px;
 }
 .brand-logo { height: 52px; width: 170px; object-fit: contain; }
+/* A real logo image keeps its own proportions (the blank placeholder box keeps the fixed width above) */
+img.brand-logo { width: auto; max-width: 260px; }
 /* inside the blue top bar the box needs light lines to be visible */
 .topbar .img-placeholder { border-color: rgba(255,255,255,0.55); background: rgba(255,255,255,0.08); }
 .item-photo .img-placeholder { width: 100%; height: 100%; border: none; border-radius: 0; background: #fff; }
@@ -841,4 +845,69 @@ tbody tr:hover td { background: #E8F0FA; }
     .tab { flex-shrink: 0; }
     .catalog-grid { grid-template-columns: 1fr; }
     .bar { width: 20px; }
+}
+
+
+/* ============================================================
+   18. VERSION 3 ADDITIONS
+       required stars, photos, notices (pop-ups), detail charts
+   ============================================================ */
+
+/* ---- Required field star:  <label>Name <span class="req">*</span></label> ---- */
+.req { color: #E01616; font-weight: 700; margin-left: 2px; }
+.req-note { font-size: 0.8rem; color: var(--muted); margin: -6px 0 14px; }
+
+/* ---- PHOTO SLOTS (one box per side: front, back, left, right, top) ---- */
+.photo-item { margin-bottom: 18px; }
+.photo-item h4 { font-size: 0.95rem; margin-bottom: 8px; }
+.photo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 10px; }
+.photo-slot { border: 1.5px solid var(--line); border-radius: 10px; padding: 8px; background: #fff; }
+.photo-label { font-size: 0.78rem; font-weight: 700; margin-bottom: 6px; }
+.photo-thumb {
+    height: 84px; display: flex; align-items: center; justify-content: center;
+    background: var(--bg); border: 1.5px dashed rgba(0,0,0,0.28); border-radius: 8px; overflow: hidden;
+}
+.photo-thumb a { display: block; width: 100%; height: 100%; }
+.photo-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.photo-actions { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+.photo-actions .btn { padding: 4px 8px; font-size: 0.72rem; flex: 1; }
+.photo-status { font-size: 0.7rem; margin-top: 4px; min-height: 1em; color: var(--muted); }
+.photo-status.error { color: var(--danger); font-weight: 600; }
+
+/* Read-only photo inside tables (detail pages) */
+.photo-cell img { width: 150px; height: 110px; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); display: block; }
+.photo-empty { font-size: 0.78rem; color: var(--muted); font-weight: 500; }
+
+/* ---- NOTICES (the pop-up cards in includes/footer.php) ---- */
+.notice { border: 1px solid var(--line); border-left: 6px solid var(--blue); border-radius: 8px; padding: 12px 14px; margin-bottom: 12px; background: var(--bg); font-size: 0.88rem; }
+.notice strong { display: block; font-size: 0.98rem; margin-bottom: 4px; }
+.notice.approved    { border-left-color: var(--success); }
+.notice.picked_up   { border-left-color: var(--blue); }
+.notice.returned    { border-left-color: var(--neutral); }
+.notice.damage_fine, .notice.rejected { border-left-color: var(--danger); }
+.notice.fine_paid   { border-left-color: var(--success); }
+
+/* ---- DETAIL CHARTS (reports.php) ---- */
+.chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 8px; }
+.hbar-row { display: grid; grid-template-columns: 150px 1fr 44px; gap: 10px; align-items: center; margin-bottom: 9px; font-size: 0.82rem; font-weight: 600; }
+.hbar-track { background: #D9E3F2; border-radius: 6px; height: 16px; overflow: hidden; }
+.hbar-fill  { height: 100%; background: var(--blue); border-radius: 6px; min-width: 3px; }
+.hbar-fill.green  { background: #2DA43C; }
+.hbar-fill.yellow { background: var(--yellow); }
+.hbar-fill.red    { background: #E02424; }
+.hbar-fill.grey   { background: #8A9BB0; }
+.hbar-value { text-align: right; }
+
+.pie-wrap { display: flex; align-items: center; gap: 24px; flex-wrap: wrap; }
+.pie { width: 150px; height: 150px; border-radius: 50%; border: 1.5px solid var(--line); flex-shrink: 0; }
+.legend div { display: flex; align-items: center; gap: 8px; font-size: 0.85rem; font-weight: 600; margin-bottom: 6px; }
+.legend i { width: 14px; height: 14px; border-radius: 3px; display: inline-block; }
+
+a.bar-col { text-decoration: none; color: inherit; }         /* chart bars that link to a month's details */
+a.bar-col:hover .bar { filter: brightness(0.9); }
+a.bar-col.selected .bar-label { text-decoration: underline; }
+
+@media (max-width: 768px) {
+    .chart-grid { grid-template-columns: 1fr; }
+    .hbar-row { grid-template-columns: 105px 1fr 36px; }
 }

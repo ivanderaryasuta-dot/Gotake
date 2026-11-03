@@ -13,7 +13,16 @@
  *   (JavaScript fetch), and the page reloads to show the new status.
  *   This is the SAME flow as your previous version.
  *
- * WHAT CHANGED
+ * NEW IN v3
+ *   - "Hand Over" now opens a pop-up where the admin adds PICK-UP PHOTOS of every
+ *     item (front, back, left, right are required *). Without them the hand-over is refused.
+ *     The student gets a "picked up" notification.
+ *   - "Process Return" now collects: RETURN PHOTOS (required), the CONDITION of each
+ *     item, a DAMAGE DESCRIPTION (required if something is damaged) and the damage FINE.
+ *     The student is notified (and told about the fine).
+ *   - Every row has a "Detail" link -> admin_loan_detail.php (photos side by side, report).
+ *
+ * WHAT CHANGED BEFORE
  *   - New design
  *   - The filter tabs (All / Pending / ...) and the search box now REALLY work
  *     (before they were only decoration). They use the URL: ?status=pending&q=...
@@ -125,16 +134,17 @@ function tab_link(string $tab, string $q): string {
 
                         <?php elseif ($loan['status'] === 'approved'): ?>
                             <!-- Approved: ready to hand over to the student -->
-                            <button class="btn btn-sm btn-primary" onclick="handOverLoan(<?= (int)$loan['id'] ?>)">Hand Over</button>
+                            <button class="btn btn-sm btn-primary" onclick="openPickupModal(<?= (int)$loan['id'] ?>, <?= $js_name ?>)">Hand Over</button>
 
                         <?php elseif ($loan['status'] === 'borrowed' || $loan['display_status'] === 'overdue'): ?>
                             <!-- Borrowed / overdue: process the return -->
                             <button class="btn btn-sm btn-primary"
                                     onclick="openReturnModal(<?= (int)$loan['id'] ?>, <?= $js_name ?>)">Process Return</button>
 
-                        <?php else: ?>
-                            <span class="link-action" style="cursor:default;">Detail</span>
                         <?php endif; ?>
+
+                        <!-- Detail is available for EVERY request: purpose, photos, damage report -->
+                        <a class="link-action" href="admin_loan_detail.php?id=<?= (int)$loan['id'] ?>">Detail</a>
                     </td>
                 </tr>
                 <?php endforeach; ?>
@@ -146,46 +156,76 @@ function tab_link(string $tab, string $q): string {
 <?= render_pagination($page, $total_pages, ['status' => $status_tab, 'q' => $q]) ?>
 
 <!-- ============================================================
-     PROCESS RETURN MODAL (pop-up)
+     HAND OVER MODAL: pick-up photos (NEW in v3)
+     ============================================================ -->
+<div class="modal" id="pickupModal">
+    <div class="modal-content" style="width:680px;">
+        <div class="modal-header">
+            <h2>Hand over items</h2>
+            <button class="close-btn" onclick="hideModal('pickupModal')">×</button>
+        </div>
+        <p class="subtitle" id="pickupInfo" style="margin-bottom:6px;">Loan #...</p>
+        <p class="req-note" style="margin-top:0;">
+            Take pick-up photos of <strong>every item</strong>. Front, back, left and right are required <span class="req">*</span>.
+            Photos are saved as soon as you choose a file, and are locked once you confirm the hand-over.
+        </p>
+        <div class="modal-error" id="pickupError" style="white-space:pre-line;"></div>
+
+        <div id="pickupPhotos"></div>
+
+        <div style="display:flex; gap:10px; margin-top:18px; justify-content:flex-end; flex-wrap:wrap;">
+            <button type="button" class="btn btn-outline" onclick="hideModal('pickupModal')">Cancel</button>
+            <button type="button" class="btn btn-primary" onclick="confirmHandOver()">Confirm hand over</button>
+        </div>
+    </div>
+</div>
+
+<!-- ============================================================
+     PROCESS RETURN MODAL: return photos, condition, damage, fine
      ============================================================ -->
 <div class="modal" id="returnModal">
-    <div class="modal-content">
+    <div class="modal-content" style="width:700px;">
         <div class="modal-header">
             <h2>Process return</h2>
             <button class="close-btn" onclick="hideModal('returnModal')">×</button>
         </div>
-        <p class="subtitle" id="modalLoanInfo" style="margin-bottom:16px;">Loan #...</p>
-        <div class="modal-error" id="returnError"></div>
+        <p class="subtitle" id="modalLoanInfo" style="margin-bottom:6px;">Loan #...</p>
+        <p class="req-note" style="margin-top:0;"><span class="req">*</span> Required</p>
+        <div class="modal-error" id="returnError" style="white-space:pre-line;"></div>
 
         <form id="returnForm">
-            <input type="hidden" name="loan_id" id="modalLoanId">
+            <input type="hidden" id="modalLoanId">
+
+            <h3 style="margin-bottom:4px;">1. Return photos <span class="req">*</span></h3>
+            <p class="field-hint" style="margin-bottom:10px;">Front, back, left and right of every item. They are compared with the pick-up photos in the damage report.</p>
+            <div id="returnPhotos"></div>
+
+            <h3 style="margin:14px 0 8px;">2. Condition of each item <span class="req">*</span></h3>
+            <div id="returnConditions"></div>
+
+            <!-- Shown only when at least one item is NOT in good condition -->
+            <div class="form-group" id="damageGroup" style="display:none;">
+                <label for="damageText">Damage description <span class="req">*</span></label>
+                <textarea id="damageText" class="form-control" rows="3" maxlength="500"
+                          placeholder="What is damaged and how? (saved in the damage report)"></textarea>
+            </div>
 
             <div class="form-group">
-                <label>Item condition on return</label>
-                <select name="condition_after" class="form-control">
-                    <option value="good">Good — no damage</option>
-                    <option value="minor_damage">Minor damage</option>
-                    <option value="damaged">Damaged</option>
-                </select>
+                <label for="fineAmount">Damage fine / denda kerusakan (Rp)</label>
+                <input type="number" id="fineAmount" class="form-control" value="0" min="0" step="1000">
+                <div class="field-hint">Leave 0 if there is no fine. The student is notified of the amount.</div>
+            </div>
+
+            <div class="form-group">
+                <label for="returnNotes">Notes</label>
+                <textarea id="returnNotes" class="form-control" rows="2" maxlength="255"></textarea>
             </div>
 
             <!-- Late or on time is NOT chosen by hand: the database function return_loan()
                  compares today with the planned return date and saves returns.was_late itself. -->
-            <p class="field-hint" style="margin:-6px 0 14px;">Late returns are detected automatically from the planned return date.</p>
-
-            <div class="form-group">
-                <label>Replacement / fine amount (Rp)</label>
-                <input type="number" name="compensation_amount" class="form-control" value="0" min="0">
-            </div>
-
-            <div class="form-group">
-                <label>Notes</label>
-                <textarea name="notes" class="form-control" rows="3"></textarea>
-            </div>
-
             <div class="form-group">
                 <label class="check-row" style="text-transform:none;">
-                    <input type="checkbox" checked required> Collateral (KTM/KTP) returned to the student
+                    <input type="checkbox" checked required> Collateral (KTM/KTP) returned to the student <span class="req">*</span>
                 </label>
             </div>
 
@@ -228,23 +268,63 @@ function tab_link(string $tab, string $q): string {
 <script>
 // ---------- Return modal ----------
 function openReturnModal(id, name) {
-    document.getElementById('modalLoanId').value = id;                           // hidden field = loan id
+    document.getElementById('modalLoanId').value = id;
     document.getElementById('modalLoanInfo').innerText = 'Loan #' + id + ' — ' + name;
     document.getElementById('returnError').style.display = 'none';
+    document.getElementById('damageText').value = '';
+    document.getElementById('fineAmount').value = 0;
+    document.getElementById('returnNotes').value = '';
+    document.getElementById('damageGroup').style.display = 'none';
     showModal('returnModal');
+
+    // 1. one photo grid per item (function from assets/js/main.js)
+    // 2. when the items are known, build one "condition" dropdown per item
+    loadLoanPhotos(id, 'return', document.getElementById('returnPhotos'), function (data) {
+        var box = document.getElementById('returnConditions');
+        box.innerHTML = '';
+        data.items.forEach(function (it) {
+            var row = document.createElement('div');
+            row.className = 'form-group';
+            row.innerHTML = '<label></label><select class="form-control condition-select">' +
+                '<option value="good">Good — no damage</option>' +
+                '<option value="minor_damage">Minor damage</option>' +
+                '<option value="damaged">Damaged</option></select>';
+            row.querySelector('label').textContent = it.name + ' (' + it.code + ') x' + it.qty;
+            var select = row.querySelector('select');
+            select.setAttribute('data-item', it.item_id);
+            select.addEventListener('change', updateDamageGroup);
+            box.appendChild(row);
+        });
+    });
+}
+
+// Show the "damage description" box only when something is not in good condition
+function updateDamageGroup() {
+    var damaged = false;
+    document.querySelectorAll('.condition-select').forEach(function (s) { if (s.value !== 'good') damaged = true; });
+    document.getElementById('damageGroup').style.display = damaged ? '' : 'none';
 }
 
 // When the return form is submitted, send it in the background instead of leaving the page
 document.getElementById('returnForm').addEventListener('submit', function (event) {
-    event.preventDefault();                                                      // stop the normal page reload
-    postForm('api/process_return.php', this)
-        .then(function (data) {
-            if (data.success) { location.reload(); return; }
-            var box = document.getElementById('returnError');
-            box.innerText = 'Error: ' + data.error;
-            box.style.display = 'block';
-        })
-        .catch(function (err) { alert('Network error: ' + err); });
+    event.preventDefault();
+
+    var conditions = {};
+    document.querySelectorAll('.condition-select').forEach(function (s) { conditions[s.getAttribute('data-item')] = s.value; });
+
+    postJSON('api/process_return.php', {
+        loan_id:            document.getElementById('modalLoanId').value,
+        conditions:         conditions,
+        damage_description: document.getElementById('damageText').value,
+        fine:               document.getElementById('fineAmount').value,
+        notes:              document.getElementById('returnNotes').value
+    }).then(function (data) {
+        if (data.success) { location.reload(); return; }
+        var box = document.getElementById('returnError');
+        box.innerText = 'Error: ' + data.error;
+        box.style.display = 'block';
+        box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }).catch(function (err) { alert('Network error: ' + err); });
 });
 
 // ---------- Reject modal ----------
@@ -282,15 +362,27 @@ function approveLoan(id) {
         .catch(function (err) { alert('Network error: ' + err); });
 }
 
-// ---------- Hand over ----------
-function handOverLoan(id) {
-    if (!confirm('Confirm hand over? This will decrease available stock.')) return;
+// ---------- Hand over (with pick-up photos) ----------
+var pickupLoanId = null;
 
-    // FIXED: was 'api/hand_over_loan.php' (file does not exist). The real file is hand_over.php.
-    postJSON('api/hand_over.php', { id: id })
+function openPickupModal(id, name) {
+    pickupLoanId = id;
+    document.getElementById('pickupInfo').innerText = 'Loan #' + id + ' — ' + name;
+    document.getElementById('pickupError').style.display = 'none';
+    showModal('pickupModal');
+    loadLoanPhotos(id, 'pickup', document.getElementById('pickupPhotos'), null);
+}
+
+function confirmHandOver() {
+    if (!confirm('Confirm hand over? This will decrease available stock and lock the pick-up photos.')) return;
+
+    // FIXED earlier: the real file is hand_over.php. It also checks that the required photos exist.
+    postJSON('api/hand_over.php', { id: pickupLoanId })
         .then(function (data) {
-            if (data.success) location.reload();
-            else alert('Error: ' + data.error);
+            if (data.success) { location.reload(); return; }
+            var box = document.getElementById('pickupError');
+            box.innerText = data.error;
+            box.style.display = 'block';
         })
         .catch(function (err) { alert('Network error: ' + err); });
 }

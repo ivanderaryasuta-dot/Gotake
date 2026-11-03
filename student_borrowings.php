@@ -47,11 +47,11 @@ if ($banner === '') {
 <div class="table-wrapper">
     <table>
         <thead>
-            <tr><th>Item</th><th>Borrow date</th><th>Return date</th><th>Collateral</th><th>Status</th></tr>
+            <tr><th>Item</th><th>Borrow date</th><th>Return date</th><th>Collateral</th><th>Status</th><th>Detail</th></tr>
         </thead>
         <tbody>
             <?php if (empty($loans)): ?>
-                <tr><td colspan="5" style="text-align:center; padding:30px;" class="muted">
+                <tr><td colspan="6" style="text-align:center; padding:30px;" class="muted">
                     You have no borrowing history yet. <a href="student_catalog.php">Browse the catalog</a>.
                 </td></tr>
             <?php else: ?>
@@ -62,6 +62,8 @@ if ($banner === '') {
                     <td><?= e(format_date($loan['return_date'])) ?></td>
                     <td><?= e($loan['collateral']) ?></td>
                     <td><?= status_badge($loan['display_status']) ?></td>
+                    <!-- Detail: photos at pick-up and return, damage report and fine (read-only) -->
+                    <td><a class="link-action" href="student_loan_detail.php?id=<?= (int)$loan['id'] ?>">Detail</a></td>
                 </tr>
                 <?php endforeach; ?>
             <?php endif; ?>

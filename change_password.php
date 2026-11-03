@@ -62,23 +62,23 @@ $id_label = $is_admin ? ($user['staff_id'] ?: ($user['username'] ?? '')) : ($use
 
     <form method="POST" novalidate autocomplete="off">
         <div class="form-group">
-            <label for="current_password">Current password</label>
+            <label for="current_password">Current password <span class="req">*</span></label>
             <input type="password" id="current_password" name="current_password" class="form-control <?= $errors['current'] ? 'has-error' : '' ?>" autocomplete="current-password">
             <?php if ($errors['current']): ?><div class="field-error"><?= e($errors['current']) ?></div><?php endif; ?>
         </div>
         <div class="form-group">
-            <label for="new_password">New password</label>
+            <label for="new_password">New password <span class="req">*</span></label>
             <input type="password" id="new_password" name="new_password" class="form-control <?= $errors['new'] ? 'has-error' : '' ?>" autocomplete="new-password">
             <?php if ($errors['new']): ?><div class="field-error"><?= e($errors['new']) ?></div><?php endif; ?>
         </div>
         <div class="form-group">
-            <label for="confirm_password">Confirm new password</label>
+            <label for="confirm_password">Confirm new password <span class="req">*</span></label>
             <input type="password" id="confirm_password" name="confirm_password" class="form-control <?= $errors['confirm'] ? 'has-error' : '' ?>" autocomplete="new-password">
             <?php if ($errors['confirm']): ?><div class="field-error"><?= e($errors['confirm']) ?></div><?php endif; ?>
         </div>
 
         <div class="btn-row">
-            <button type="submit" class="btn <?= $is_admin ? 'btn-blue' : 'btn-primary' ?>" style="flex:1; padding:12px;">Update Password</button>
+            <button type="submit" class="btn btn-primary" style="flex:1; padding:12px;">Update Password</button>
             <a href="profile.php" class="btn btn-outline" style="padding:12px 38px;">Cancel</a>
         </div>
     </form>

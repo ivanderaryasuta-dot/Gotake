@@ -15,6 +15,13 @@
  *   4. If everything is OK we store the user's info in $_SESSION
  *      (PHP's memory for this visitor) and redirect to their dashboard.
  *
+ * WHERE / JURUSAN CHOICE  (NEW in v3)
+ *   Below the password, students can choose WHERE they want to borrow and for
+ *   which JURUSAN. The default "apa saja" (= any) means no filter. The choice is
+ *   saved in the session and used as the starting filter of the item catalog.
+ *   Admins can ignore it. (The lists come from the items in the database; the
+ *   jurusan of an item is set by the admin in Manage Items.)
+ *
  * WHAT IS NEW
  *   - New design (PBL.pdf) with red error messages under each field
  *   - "Remember me" keeps you logged in longer
@@ -30,6 +37,20 @@ if (isset($_SESSION['user_id'])) {
     header('Location: ' . (($_SESSION['role'] ?? '') === 'admin' ? 'index.php' : 'student_dashboard.php'));
     exit;
 }
+
+// ---- Options for the "where / jurusan" dropdowns (each in its own try so a problem never blocks login) ----
+$locations = [];
+$jurusans  = [];
+try {
+    $locations = $pdo->query("SELECT DISTINCT location FROM items WHERE is_active = TRUE ORDER BY location")->fetchAll(PDO::FETCH_COLUMN);
+    foreach ($pdo->query("SELECT id FROM items WHERE is_active = TRUE")->fetchAll(PDO::FETCH_COLUMN) as $item_id) {
+        $j = item_jurusan((int)$item_id);       // stored in uploads/items/<id>/meta.json
+        if ($j !== '') $jurusans[$j] = $j;
+    }
+    sort($jurusans);
+} catch (Exception $e) { /* no lists, the dropdowns just show "apa saja" */ }
+$pref_location = trim($_POST['pref_location'] ?? '');
+$pref_jurusan  = trim($_POST['pref_jurusan']  ?? '');
 
 // Messages shown under the fields (empty = no error)
 $errors     = ['identifier' => '', 'password' => '', 'general' => ''];
@@ -79,6 +100,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $_SESSION['full_name'] = $user['full_name'];
             $_SESSION['role']      = $user['role'];
 
+            // Where / jurusan the student wants to borrow ('' = any). Used by student_catalog.php.
+            $_SESSION['pref_location'] = $pref_location;
+            $_SESSION['pref_jurusan']  = $pref_jurusan;
+
             // "Remember me": make the session cookie last 30 days instead of
             // "until the browser closes".
             // (For it to survive on the server too, also raise session.gc_maxlifetime in php.ini.)
@@ -122,7 +147,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <form method="POST" novalidate>
 
     <div class="form-group">
-        <label for="identifier">NIM / Username</label>
+        <label for="identifier">NIM / Username <span class="req">*</span></label>
         <input type="text" id="identifier" name="identifier"
                class="form-control <?= $errors['identifier'] ? 'has-error' : '' ?>"
                placeholder="Enter your student ID (admins: username)"
@@ -131,11 +156,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     </div>
 
     <div class="form-group">
-        <label for="password">Password</label>
+        <label for="password">Password <span class="req">*</span></label>
         <input type="password" id="password" name="password"
                class="form-control <?= $errors['password'] ? 'has-error' : '' ?>"
                placeholder="Enter your password" autocomplete="current-password">
         <?php if ($errors['password']): ?><div class="field-error"><?= e($errors['password']) ?></div><?php endif; ?>
+    </div>
+
+    <!-- Students: where do you want to borrow, for which jurusan? ("apa saja" = any) -->
+    <div class="form-group">
+        <label for="pref_location">Where do you want to borrow? <small>(students)</small></label>
+        <select id="pref_location" name="pref_location" class="form-control">
+            <option value="">Anywhere (apa saja)</option>
+            <?php foreach ($locations as $loc): ?>
+                <option value="<?= e($loc) ?>" <?= $pref_location === $loc ? 'selected' : '' ?>><?= e($loc) ?></option>
+            <?php endforeach; ?>
+        </select>
+    </div>
+
+    <div class="form-group">
+        <label for="pref_jurusan">Jurusan <small>(students)</small></label>
+        <select id="pref_jurusan" name="pref_jurusan" class="form-control">
+            <option value="">All jurusan (apa saja)</option>
+            <?php foreach ($jurusans as $j): ?>
+                <option value="<?= e($j) ?>" <?= $pref_jurusan === $j ? 'selected' : '' ?>><?= e($j) ?></option>
+            <?php endforeach; ?>
+        </select>
     </div>
 
     <div class="auth-row">

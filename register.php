@@ -89,37 +89,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <?php endif; ?>
 
 <form method="POST" novalidate>
+    <p class="req-note"><span class="req">*</span> Required</p>
 
     <div class="form-group">
-        <label for="name">Name</label>
+        <label for="name">Name <span class="req">*</span></label>
         <input type="text" id="name" name="name" class="form-control <?= $errors['name'] ? 'has-error' : '' ?>"
                placeholder="Enter your Name" value="<?= e($old['name']) ?>" autocomplete="name">
         <?php if ($errors['name']): ?><div class="field-error"><?= e($errors['name']) ?></div><?php endif; ?>
     </div>
 
     <div class="form-group">
-        <label for="nim">NIM</label>
+        <label for="nim">NIM <span class="req">*</span></label>
         <input type="text" id="nim" name="nim" class="form-control <?= $errors['nim'] ? 'has-error' : '' ?>"
                placeholder="Enter your student ID" value="<?= e($old['nim']) ?>" inputmode="numeric">
         <?php if ($errors['nim']): ?><div class="field-error"><?= e($errors['nim']) ?></div><?php endif; ?>
     </div>
 
     <div class="form-group">
-        <label for="email">Email</label>
+        <label for="email">Email <span class="req">*</span></label>
         <input type="email" id="email" name="email" class="form-control <?= $errors['email'] ? 'has-error' : '' ?>"
                placeholder="Enter your email" value="<?= e($old['email']) ?>" autocomplete="email">
         <?php if ($errors['email']): ?><div class="field-error"><?= e($errors['email']) ?></div><?php endif; ?>
     </div>
 
     <div class="form-group">
-        <label for="password">Password</label>
+        <label for="password">Password <span class="req">*</span></label>
         <input type="password" id="password" name="password" class="form-control <?= $errors['password'] ? 'has-error' : '' ?>"
                placeholder="At least 8 characters" autocomplete="new-password">
         <?php if ($errors['password']): ?><div class="field-error"><?= e($errors['password']) ?></div><?php endif; ?>
     </div>
 
     <div class="form-group">
-        <label for="confirm">Confirm password</label>
+        <label for="confirm">Confirm password <span class="req">*</span></label>
         <input type="password" id="confirm" name="confirm" class="form-control <?= $errors['confirm'] ? 'has-error' : '' ?>"
                placeholder="Type the password again" autocomplete="new-password">
         <?php if ($errors['confirm']): ?><div class="field-error"><?= e($errors['confirm']) ?></div><?php endif; ?>
@@ -127,7 +128,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     <div class="form-group">
         <label class="check-row" style="text-transform:none; font-weight:500;">
-            <input type="checkbox" name="agree"> I agree to the Terms of Service and Collateral Policy
+            <input type="checkbox" name="agree"> I agree to the Terms of Service and Collateral Policy <span class="req">*</span>
         </label>
         <?php if ($errors['agree']): ?><div class="field-error"><?= e($errors['agree']) ?></div><?php endif; ?>
     </div>
