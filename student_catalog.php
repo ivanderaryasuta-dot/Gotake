@@ -17,19 +17,34 @@
  *   - The search box uses liveFilter() from assets/js/main.js.
  *   - "Request to borrow" opens student_new_request.php?item_id=NUMBER
  *
+ * WHERE / JURUSAN FILTER  (NEW in v3)
+ *   At login the student can say where they want to borrow and for which jurusan
+ *   ("apa saja" = any). Those choices are kept in the session and used here as
+ *   the starting filter; the two dropdowns below the title change them.
+ *     - location : the item's storage location (items.location)
+ *     - jurusan  : set by the admin in Manage Items. Items WITHOUT a jurusan are
+ *                  shared, so they always show.
+ *
  * IMAGES
- *   Each card looks for a picture at  assets/img/items/<ITEM CODE>.png
- *   (e.g. an item with code PRJ-01 -> assets/img/items/PRJ-01.png).
- *   If it does not exist the card shows a blank white box.
+ *   The card shows the FRONT photo uploaded by the admin (Manage Items > Photos).
+ *   If there is none, it looks for  assets/img/items/<ITEM CODE>.png  (the old way),
+ *   and otherwise shows a blank white box.
  * ------------------------------------------------------------
  */
 $page_title = 'Item Catalog';
 require_once 'includes/header.php';
 require_role('student');
 
+// ---- The filter choices: from the URL (dropdowns) or from what was chosen at login ----
+if (isset($_GET['location']) || isset($_GET['jurusan'])) {
+    $_SESSION['pref_location'] = trim($_GET['location'] ?? '');
+    $_SESSION['pref_jurusan']  = trim($_GET['jurusan']  ?? '');
+}
+$pref_location = $_SESSION['pref_location'] ?? '';
+$pref_jurusan  = $_SESSION['pref_jurusan']  ?? '';
+
 // Load all active items with their category name.
-// (location was added by database/update_schema.sql)
-$items = $pdo->query("
+$all_items = $pdo->query("
     SELECT i.id, i.code, i.name, i.available_qty, i.total_qty, i.location,
            c.name AS category
     FROM items i
@@ -37,6 +52,26 @@ $items = $pdo->query("
     WHERE i.is_active = TRUE
     ORDER BY c.name, i.name
 ")->fetchAll();
+
+// Add the jurusan + front photo (stored in the uploads folder), and collect the dropdown lists
+$locations = [];
+$jurusans  = [];
+foreach ($all_items as &$row) {
+    $row['jurusan']     = item_jurusan((int)$row['id']);
+    $row['front_photo'] = item_photos((int)$row['id'])['front'] ?? null;
+    $locations[$row['location']] = $row['location'];
+    if ($row['jurusan'] !== '') $jurusans[$row['jurusan']] = $row['jurusan'];
+}
+unset($row);
+sort($locations);
+sort($jurusans);
+
+// Keep only the items that match the chosen location / jurusan ("" = any)
+$items = array_values(array_filter($all_items, function ($it) use ($pref_location, $pref_jurusan) {
+    if ($pref_location !== '' && $it['location'] !== $pref_location) return false;
+    if ($pref_jurusan  !== '' && $it['jurusan'] !== '' && $it['jurusan'] !== $pref_jurusan) return false;   // shared items always show
+    return true;
+}));
 
 // Build the list of category chips from the items themselves
 $categories = array_values(array_unique(array_column($items, 'category')));
@@ -56,6 +91,25 @@ $categories = array_values(array_unique(array_column($items, 'category')));
 
         <input type="text" id="catalogSearch" class="pill-input push-right" placeholder="Search item...">
     </div>
+
+    <!-- Where / jurusan: choosing a value reloads the page with ?location=...&jurusan=... -->
+    <form method="GET" class="tabs" style="margin:14px 0 0;">
+        <select name="location" class="pill-input" onchange="this.form.submit()" aria-label="Where do you want to borrow?">
+            <option value="">Anywhere (apa saja)</option>
+            <?php foreach ($locations as $loc): ?>
+                <option value="<?= e($loc) ?>" <?= $pref_location === $loc ? 'selected' : '' ?>><?= e($loc) ?></option>
+            <?php endforeach; ?>
+        </select>
+        <select name="jurusan" class="pill-input" onchange="this.form.submit()" aria-label="Jurusan">
+            <option value="">All jurusan (apa saja)</option>
+            <?php foreach ($jurusans as $j): ?>
+                <option value="<?= e($j) ?>" <?= $pref_jurusan === $j ? 'selected' : '' ?>><?= e($j) ?></option>
+            <?php endforeach; ?>
+        </select>
+        <?php if ($pref_location !== '' || $pref_jurusan !== ''): ?>
+            <a href="?location=&jurusan=" class="tab" style="background:#fff;">Clear filters</a>
+        <?php endif; ?>
+    </form>
 </section>
 
 <?= flash_render() /* e.g. "Please choose an item from the catalog first." */ ?>
@@ -63,7 +117,7 @@ $categories = array_values(array_unique(array_column($items, 'category')));
 <!-- ============ ITEM CARDS ============ -->
 <div class="catalog-grid" id="catalogGrid">
     <?php if (empty($items)): ?>
-        <p class="muted">No items are available yet.</p>
+        <p class="muted">No items match your filters. Try "Anywhere" or "All jurusan".</p>
     <?php endif; ?>
 
     <?php foreach ($items as $it):
@@ -71,9 +125,9 @@ $categories = array_values(array_unique(array_column($items, 'category')));
     ?>
     <article class="item-card" data-category="<?= e($it['category']) ?>">
 
-        <!-- Item photo slot: assets/img/items/<CODE>.png -->
+        <!-- Front photo uploaded by the admin, or the blank slot assets/img/items/<CODE>.png -->
         <div class="item-photo">
-            <?= img_slot('items/' . $it['code'], '', $it['name']) ?>
+            <?= item_photo_html($it['front_photo'], $it['code'], $it['name']) ?>
         </div>
 
         <div class="item-body">

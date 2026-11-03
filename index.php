@@ -111,8 +111,8 @@ $loans = $list->fetchAll();
                     <td><?= e(format_date($loan['borrow_date'], 'd/m/Y')) ?></td>
                     <td><?= status_badge($loan['display_status']) ?></td>
                     <td><?= e($loan['collateral']) ?></td>
-                    <!-- "Detail" opens Manage Requests where the request can be handled -->
-                    <td><a class="link-action" href="manage_requests.php?q=<?= urlencode($loan['nim'] ?? '') ?>">Detail</a></td>
+                    <!-- "Detail" opens the full loan page (photos, damage report) -->
+                    <td><a class="link-action" href="admin_loan_detail.php?id=<?= (int)$loan['id'] ?>">Detail</a></td>
                 </tr>
                 <?php endforeach; ?>
             <?php endif; ?>

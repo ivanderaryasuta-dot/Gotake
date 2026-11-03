@@ -8,6 +8,11 @@
  *     - ADD a new item     (button "+ ADD ITEM")
  *     - EDIT an item       ("Edit" in the row)
  *     - DELETE an item     ("Delete" in the row)
+ *     - manage PHOTOS of an item ("Photos" in the row)           (NEW in v3)
+ *       One reference photo per side (front, back, left, right, top).
+ *       Add / replace / delete. Sides marked * are required.
+ *     - set the JURUSAN (department) an item belongs to           (NEW in v3)
+ *       Students can filter the catalog by jurusan (chosen at login).
  *
  * HOW ADD / EDIT / DELETE WORK
  *   A pop-up form (modal) collects the data, JavaScript sends it to
@@ -32,6 +37,16 @@ $page          = max(1, (int)($_GET['page'] ?? 1));
 $per_page      = 8;
 
 $categories = $pdo->query("SELECT id, name FROM categories ORDER BY name")->fetchAll();
+
+// Jurusan names already used by items (shown as suggestions while typing).
+// They are kept in uploads/items/<id>/meta.json, so we read them with item_jurusan().
+$jurusan_list = [];
+foreach ($pdo->query("SELECT id FROM items WHERE is_active = TRUE")->fetchAll(PDO::FETCH_COLUMN) as $any_id) {
+    $j = item_jurusan((int)$any_id);
+    if ($j !== '') $jurusan_list[$j] = $j;
+}
+$jurusan_list = array_values($jurusan_list);
+sort($jurusan_list);
 
 // ---- 2. WHERE clause (only active items; deleted ones are hidden) ----
 $conditions = ['i.is_active = TRUE'];
@@ -59,6 +74,13 @@ $stmt = $pdo->prepare("
 ");
 $stmt->execute($params);
 $items = $stmt->fetchAll();
+
+// Add what is stored in the uploads folder: the jurusan, and how many of the 4 REQUIRED photos exist
+foreach ($items as &$row) {
+    $row['jurusan']     = item_jurusan((int)$row['id']);
+    $row['photo_count'] = count(array_intersect(array_keys(item_photos((int)$row['id'])), PHOTO_REQUIRED));
+}
+unset($row);
 
 // Helper: URL for a category tab, keeping the status filter
 function cat_link(int $cat, string $status): string {
@@ -97,25 +119,31 @@ function cat_link(int $cat, string $status): string {
     <table>
         <thead>
             <tr>
-                <th>Item name</th><th>Category</th><th>Location</th><th>Available stock</th>
+                <th>Item name</th><th>Category</th><th>Location</th><th>Jurusan</th><th>Photos</th><th>Available stock</th>
                 <th>Status</th><th>Collateral</th><th>Action</th>
             </tr>
         </thead>
         <tbody>
             <?php if (empty($items)): ?>
-                <tr><td colspan="7" style="text-align:center;" class="muted">No items found.</td></tr>
+                <tr><td colspan="9" style="text-align:center;" class="muted">No items found.</td></tr>
             <?php else: ?>
                 <?php foreach ($items as $it): $in_stock = (int)$it['available_qty'] > 0; ?>
                 <tr>
                     <td><?= e($it['name']) ?></td>
                     <td><?= e($it['category']) ?></td>
                     <td><?= e($it['location'] ?: '—') ?></td>
+                    <td><?= e($it['jurusan'] ?: 'All') ?></td>
+                    <td>
+                        <!-- X/4 = how many of the 4 REQUIRED sides have a photo -->
+                        <span class="badge <?= (int)$it['photo_count'] >= 4 ? 'available' : 'pending' ?>"><?= (int)$it['photo_count'] ?>/4</span>
+                    </td>
                     <td><?= (int)$it['available_qty'] ?>/<?= (int)$it['total_qty'] ?></td>
                     <td><span class="badge <?= $in_stock ? 'available' : 'unavailable' ?>"><?= $in_stock ? 'Available' : 'Not Available' ?></span></td>
                     <td>KTM/KTP</td>
                     <td>
                         <!-- data-item holds this row as JSON so the Edit modal can be pre-filled -->
                         <button class="link-action" data-item="<?= e(json_encode($it)) ?>" onclick="openItemModal(this)">Edit</button>
+                        <button class="link-action" onclick="openPhotoModal(<?= (int)$it['id'] ?>, <?= e(json_encode($it['name'])) ?>)">Photos</button>
                         <button class="link-action danger" onclick="deleteItem(<?= (int)$it['id'] ?>, <?= e(json_encode($it['name'])) ?>)">Delete</button>
                     </td>
                 </tr>
@@ -143,22 +171,22 @@ function cat_link(int $cat, string $status): string {
 
             <div class="grid-two-col" style="gap:14px;">
                 <div class="form-group">
-                    <label for="item_code">Item code</label>
+                    <label for="item_code">Item code <span class="req">*</span></label>
                     <input type="text" id="item_code" class="form-control" placeholder="e.g. PRJ-01" required>
                 </div>
                 <div class="form-group">
-                    <label for="item_total">Total quantity</label>
+                    <label for="item_total">Total quantity <span class="req">*</span></label>
                     <input type="number" id="item_total" class="form-control" min="1" value="1" required>
                 </div>
             </div>
 
             <div class="form-group">
-                <label for="item_name">Item name</label>
+                <label for="item_name">Item name <span class="req">*</span></label>
                 <input type="text" id="item_name" class="form-control" placeholder="e.g. Epson Projector" required>
             </div>
 
             <div class="form-group">
-                <label for="item_category">Category</label>
+                <label for="item_category">Category <span class="req">*</span></label>
                 <select id="item_category" class="form-control" required>
                     <?php foreach ($categories as $c): ?>
                         <option value="<?= (int)$c['id'] ?>"><?= e($c['name']) ?></option>
@@ -167,19 +195,42 @@ function cat_link(int $cat, string $status): string {
             </div>
 
             <div class="form-group">
-                <label for="item_location">Storage location *</label>
+                <label for="item_location">Storage location <span class="req">*</span></label>
                 <input type="text" id="item_location" class="form-control" placeholder="e.g. Server room" required>
             </div>
 
-            <div class="field-hint" style="margin-bottom:14px;">
-                Item photo: put a file named <strong>&lt;item code&gt;.png</strong> in <em>assets/img/items/</em>
+            <div class="form-group">
+                <label for="item_jurusan">Jurusan <small>(leave empty = shared by all jurusan)</small></label>
+                <input type="text" id="item_jurusan" class="form-control" list="jurusanList" placeholder="e.g. Informatics">
+                <datalist id="jurusanList">
+                    <?php foreach ($jurusan_list as $j): ?><option value="<?= e($j) ?>"><?php endforeach; ?>
+                </datalist>
             </div>
+
+            <p class="req-note"><span class="req">*</span> Required. Add the item photos afterwards with the "Photos" button in the table.</p>
 
             <div style="display:flex; gap:10px; justify-content:flex-end;">
                 <button type="button" class="btn btn-outline" onclick="hideModal('itemModal')">Cancel</button>
                 <button type="submit" class="btn btn-primary">Save item</button>
             </div>
         </form>
+    </div>
+</div>
+
+<!-- ============================================================
+     PHOTOS MODAL: reference photos of ONE item (add / replace / delete)
+     ============================================================ -->
+<div class="modal" id="photoModal">
+    <div class="modal-content" style="width:640px;">
+        <div class="modal-header">
+            <h2 id="photoModalTitle">Photos</h2>
+            <button class="close-btn" onclick="hideModal('photoModal'); location.reload();">×</button>
+        </div>
+        <p class="req-note" style="margin-top:0;">Photos are saved as soon as you choose a file. Sides marked <span class="req">*</span> are required.</p>
+        <div id="photoSlots"></div>
+        <div style="display:flex; justify-content:flex-end; margin-top:14px;">
+            <button type="button" class="btn btn-primary" onclick="hideModal('photoModal'); location.reload();">Done</button>
+        </div>
     </div>
 </div>
 
@@ -195,6 +246,7 @@ function openItemModal(btn) {
     document.getElementById('item_name').value     = it ? it.name : '';
     document.getElementById('item_total').value    = it ? it.total_qty : 1;
     document.getElementById('item_location').value = it && it.location ? it.location : '';
+    document.getElementById('item_jurusan').value  = it && it.jurusan ? it.jurusan : '';
     if (it) document.getElementById('item_category').value = it.category_id;
 
     document.getElementById('itemError').style.display = 'none';
@@ -211,7 +263,8 @@ document.getElementById('itemForm').addEventListener('submit', function (event) 
         name:        document.getElementById('item_name').value.trim(),
         category_id: document.getElementById('item_category').value,
         total_qty:   document.getElementById('item_total').value,
-        location:    document.getElementById('item_location').value.trim()
+        location:    document.getElementById('item_location').value.trim(),
+        jurusan:     document.getElementById('item_jurusan').value.trim()
     }).then(function (data) {
         if (data.success) { location.reload(); return; }
         var box = document.getElementById('itemError');
@@ -219,6 +272,35 @@ document.getElementById('itemForm').addEventListener('submit', function (event) 
         box.style.display = 'block';
     }).catch(function (err) { alert('Network error: ' + err); });
 });
+
+// ---------- PHOTOS MODAL ----------
+// Loads the existing photos of the item, then shows one box per side.
+// Uploading / replacing / deleting talks to api/item_photo.php.
+function openPhotoModal(itemId, itemName) {
+    document.getElementById('photoModalTitle').innerText = 'Photos — ' + itemName;
+    var holder = document.getElementById('photoSlots');
+    holder.textContent = 'Loading...';
+    showModal('photoModal');
+
+    fetch('api/item_photo.php?action=list&item_id=' + itemId)
+        .then(function (res) { return res.json(); })
+        .then(function (data) {
+            buildPhotoSlots(holder, data.photos || {}, {
+                upload: function (side, file) {
+                    var fd = new FormData();
+                    fd.append('action', 'upload'); fd.append('item_id', itemId);
+                    fd.append('side', side);       fd.append('photo', file);
+                    return fetch('api/item_photo.php', { method: 'POST', body: fd }).then(function (r) { return r.json(); });
+                },
+                remove: function (side) {
+                    var fd = new FormData();
+                    fd.append('action', 'delete'); fd.append('item_id', itemId); fd.append('side', side);
+                    return fetch('api/item_photo.php', { method: 'POST', body: fd }).then(function (r) { return r.json(); });
+                }
+            });
+        })
+        .catch(function () { holder.textContent = 'Could not load the photos.'; });
+}
 
 // Delete (the server only hides the item, see api/delete_item.php)
 function deleteItem(id, name) {

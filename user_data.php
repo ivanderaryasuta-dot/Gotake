@@ -148,12 +148,12 @@ function role_link(string $role, string $q): string {
             </div>
 
             <div class="form-group">
-                <label for="user_name">Full name</label>
+                <label for="user_name">Full name <span class="req">*</span></label>
                 <input type="text" id="user_name" class="form-control" required>
             </div>
 
             <div class="form-group">
-                <label for="user_ident" id="identLabel">NIM</label>
+                <label for="user_ident"><span id="identLabel">NIM</span> <span class="req">*</span></label>
                 <input type="text" id="user_ident" class="form-control" required>
             </div>
 
@@ -169,7 +169,7 @@ function role_link(string $role, string $q): string {
             </div>
 
             <div class="form-group">
-                <label for="user_password">Password <small id="pwHint">(min. 8 characters)</small></label>
+                <label for="user_password">Password <span class="req" id="pwStar">*</span> <small id="pwHint">(min. 8 characters)</small></label>
                 <input type="password" id="user_password" class="form-control" autocomplete="new-password">
             </div>
 
@@ -203,6 +203,7 @@ function openUserModal(btn) {
     document.getElementById('user_password').value = '';
     // When editing, an empty password means "keep the current one"
     document.getElementById('pwHint').innerText    = u ? '(leave empty to keep the current one)' : '(min. 8 characters)';
+    document.getElementById('pwStar').style.display = u ? 'none' : '';      // password is only required for NEW users
 
     updateIdLabel();
     document.getElementById('userError').style.display = 'none';

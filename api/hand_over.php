@@ -9,7 +9,10 @@
  * BEFORE calling it we double-check ("pre-flight check"):
  *   Step 1  the loan exists and is 'approved'
  *   Step 2  for every item: is that quantity PHYSICALLY in storage right now?
- *   Step 3  if all is fine -> call hand_over_loan()
+ *   Step 3  NEW in v3: every item needs its REQUIRED pick-up photos
+ *           (front, back, left, right - see PHOTO_REQUIRED in includes/functions.php)
+ *   Step 4  if all is fine -> call hand_over_loan() and tell the student
+ *           ("picked up" notification -> pop-up on the student's next page)
  *
  * CHANGED FROM YOUR PREVIOUS VERSION (a bug):
  *   The old check also asked item_available_on() about the loan dates.
@@ -67,12 +70,36 @@ try {
         ]);
     }
 
-    // ---- Step 3: do it ----
+    // ---- Step 3 (NEW): required pick-up photos ----
+    $missing = missing_photo_sides($pdo, (int)$loan_id, 'pickup');
+    if (!empty($missing)) {
+        json_out([
+            'success' => false,
+            'error'   => "Cannot hand over yet. Required pick-up photos (*) are missing:\n\n" . implode("\n", $missing)
+        ]);
+    }
+
+    // ---- Step 4: do it (hand-over + notification together, all or nothing) ----
+    $pdo->beginTransaction();
+
     $stmt = $pdo->prepare("SELECT hand_over_loan(?)");
     $stmt->execute([$loan_id]);
+
+    $info = $pdo->prepare("SELECT user_id, return_date FROM loans WHERE id = ?");
+    $info->execute([$loan_id]);
+    $loan_row = $info->fetch();
+
+    $names = $pdo->prepare("SELECT string_agg(i.name || ' x' || li.qty, ', ') FROM loan_items li JOIN items i ON i.id = li.item_id WHERE li.loan_id = ?");
+    $names->execute([$loan_id]);
+
+    add_notification($pdo, (int)$loan_row['user_id'], (int)$loan_id, 'picked_up',
+        'Your items were picked up: ' . $names->fetchColumn() . '. Please return them by ' . format_date($loan_row['return_date']) . '.');
+
+    $pdo->commit();
     json_out(['success' => true]);
 
 } catch (Exception $e) {
+    if ($pdo->inTransaction()) $pdo->rollBack();
     $msg = $e->getMessage();
     if (strpos($msg, 'chk_item_qty') !== false || strpos($msg, 'check constraint') !== false) {
         $msg = "Cannot hand over: Physical stock changed between check and hand-over. Please refresh and try again.";

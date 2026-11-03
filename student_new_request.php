@@ -52,6 +52,9 @@ if (!$item) {
     exit;
 }
 
+// Photos of the item that the admin uploaded (front, back, left, right, top)
+$item_photos = item_photos((int)$item['id']);
+
 // Settings from the admin Settings page
 $max_days           = (int)get_setting($pdo, 'max_loan_days', 3);
 $require_collateral = setting_bool($pdo, 'require_collateral', true);   // stored as 'true'/'false'
@@ -157,8 +160,8 @@ $is_available = (int)$item['available_qty'] > 0;
     <!-- ============ LEFT: THE SELECTED ITEM ============ -->
     <article class="item-card" style="border:1.5px solid var(--line);">
         <div class="item-photo" style="height:160px;">
-            <!-- Photo slot: assets/img/items/<ITEM CODE>.png -->
-            <?= img_slot('items/' . $item['code'], '', $item['name']) ?>
+            <!-- Front photo from Manage Items > Photos, or the blank slot assets/img/items/<CODE>.png -->
+            <?= item_photo_html($item_photos['front'] ?? null, $item['code'], $item['name']) ?>
         </div>
         <div class="item-body" style="min-height:230px;">
             <div class="item-category"><?= e($item['category']) ?></div>
@@ -171,6 +174,18 @@ $is_available = (int)$item['available_qty'] > 0;
                     <span class="badge unavailable">Not Available — Stock 0/<?= (int)$item['total_qty'] ?></span>
                 <?php endif; ?>
             </div>
+
+            <!-- The other sides of the item, so the student knows exactly what they will receive -->
+            <?php if (count($item_photos) > 1): ?>
+                <div class="photo-grid" style="grid-template-columns:repeat(auto-fill,minmax(70px,1fr)); margin-top:12px;">
+                    <?php foreach (PHOTO_SIDES as $side => $label): if (empty($item_photos[$side])) continue; ?>
+                        <div>
+                            <div class="photo-thumb" style="height:56px;"><?= photo_box($item_photos[$side], $label) ?></div>
+                            <div class="item-meta" style="text-align:center;"><?= e($label) ?></div>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
+            <?php endif; ?>
         </div>
     </article>
 
@@ -184,27 +199,29 @@ $is_available = (int)$item['available_qty'] > 0;
             Fill in the form below an admin will verify it before you can pick up the item
         </p>
 
+        <p class="req-note"><span class="req">*</span> Required</p>
+
         <div class="grid-two-col" style="gap:16px;">
             <div class="form-group">
-                <label for="borrowDate">Borrow date</label>
+                <label for="borrowDate">Borrow date <span class="req">*</span></label>
                 <input type="date" name="borrow_date" id="borrowDate" class="form-control"
                        min="<?= date('Y-m-d') ?>" value="<?= e($_POST['borrow_date'] ?? '') ?>" required>
             </div>
             <div class="form-group">
-                <label for="returnDate">Return date <small>(maximum <?= $max_days ?> days)</small></label>
+                <label for="returnDate">Return date <span class="req">*</span> <small>(maximum <?= $max_days ?> days)</small></label>
                 <input type="date" name="return_date" id="returnDate" class="form-control"
                        min="<?= date('Y-m-d') ?>" value="<?= e($_POST['return_date'] ?? '') ?>" required>
             </div>
         </div>
 
         <div class="form-group">
-            <label for="qty">Quantity</label>
+            <label for="qty">Quantity <span class="req">*</span></label>
             <input type="number" name="qty" id="qty" class="form-control" min="1"
                    max="<?= max(1, (int)$item['available_qty']) ?>" value="<?= e($_POST['qty'] ?? 1) ?>" style="max-width:140px;" required>
         </div>
 
         <div class="form-group">
-            <label for="purpose">Purpose / reason</label>
+            <label for="purpose">Purpose / reason <span class="req">*</span></label>
             <textarea name="purpose" id="purpose" class="form-control" rows="3" required
                       placeholder="Give your reason..."><?= e($_POST['purpose'] ?? '') ?></textarea>
         </div>
@@ -212,7 +229,7 @@ $is_available = (int)$item['available_qty'] > 0;
         <?php if ($require_collateral): ?>
             <!-- Collateral section (can be turned off in admin Settings) -->
             <div class="form-group">
-                <label for="collateral">Collateral type</label>
+                <label for="collateral">Collateral type <span class="req">*</span></label>
                 <select name="collateral" id="collateral" class="form-control" style="max-width:260px;">
                     <option value="KTM" <?= (($_POST['collateral'] ?? '') === 'KTM') ? 'selected' : '' ?>>KTM (Student Card)</option>
                     <option value="KTP" <?= (($_POST['collateral'] ?? '') === 'KTP') ? 'selected' : '' ?>>KTP (National ID)</option>
@@ -226,7 +243,7 @@ $is_available = (int)$item['available_qty'] > 0;
 
             <label class="check-row" style="margin-bottom:18px; font-weight:600;">
                 <input type="checkbox" name="agree" <?= !empty($_POST['agree']) ? 'checked' : '' ?>>
-                I agree to have my Student ID Card (KTM) held as collateral
+                I agree to have my Student ID Card (KTM) held as collateral <span class="req">*</span>
             </label>
         <?php endif; ?>
 

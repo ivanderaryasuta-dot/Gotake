@@ -27,6 +27,7 @@ $name        = trim($d['name'] ?? '');
 $category_id = (int)($d['category_id'] ?? 0);
 $total       = (int)($d['total_qty'] ?? 0);
 $location    = trim($d['location'] ?? '');
+$jurusan     = trim($d['jurusan'] ?? '');   // department that owns the item ('' = shared by all)
 
 if ($code === '' || $name === '') json_out(['success' => false, 'error' => 'Item code and name are required.']);
 if ($location === '')             json_out(['success' => false, 'error' => 'Storage location is required.']);
@@ -39,8 +40,10 @@ try {
         $stmt = $pdo->prepare("
             INSERT INTO items (code, name, category_id, total_qty, available_qty, location, is_active)
             VALUES (?, ?, ?, ?, ?, ?, TRUE)
+            RETURNING id
         ");
         $stmt->execute([$code, $name, $category_id, $total, $total, $location]);
+        $id = (int)$stmt->fetchColumn();   // the new item's id (needed to save its jurusan)
     } else {
         // ---- EDIT ----
         $stmt = $pdo->prepare("SELECT total_qty, available_qty FROM items WHERE id = ?");
@@ -61,6 +64,11 @@ try {
         ");
         $stmt->execute([$code, $name, $category_id, $total, $available, $location, $id]);
     }
+    // JURUSAN is kept in uploads/items/<id>/meta.json (no database column needed)
+    $meta = meta_read('items/' . $id);
+    if ($jurusan !== '') $meta['jurusan'] = $jurusan; else unset($meta['jurusan']);
+    meta_write('items/' . $id, $meta);
+
     json_out(['success' => true]);
 
 } catch (PDOException $e) {

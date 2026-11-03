@@ -141,7 +141,7 @@ $cfg = [
     </div>
 
     <div class="btn-row" style="margin-top:0;">
-        <button type="submit" class="btn btn-blue" style="padding:12px 38px;">Save Changes</button>
+        <button type="submit" class="btn btn-primary" style="padding:12px 38px;">Save Changes</button>
         <a href="index.php" class="btn btn-outline" style="padding:12px 38px;">Cancel</a>
     </div>
 </form>
