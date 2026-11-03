@@ -42,7 +42,7 @@ $site_name  = get_setting($pdo, 'site_name', 'GoTake - Campus Loan System');
         <!-- LEFT SIDE: big picture (the shopping-cart illustration in the design).
              Put your file at  assets/img/auth-banner.png  -->
         <div class="auth-art">
-            <?= img_slot('auth-banner', '', 'Just borrow, go take') ?>
+            <?= img_slot('Troli', '', 'Just borrow, go take') ?>
         </div>
 
         <!-- RIGHT SIDE: the form. The page writes its own form after this line. -->
