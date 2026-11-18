@@ -1,29 +1,24 @@
 <?php
 /**
- * student_new_request.php  —  BORROW REQUEST  ("Borrow Request" in PBL.pdf)
+ * student_new_request.php  —  BORROW REQUEST  (now supports SEVERAL ITEMS = a "bulk" loan)
  * ------------------------------------------------------------
- * WHAT THIS PAGE DOES
- *   The student reaches this page by pressing "Request to borrow" on a
- *   catalog card (the link contains ?item_id=NUMBER). They choose
- *   dates, a quantity, write a reason, agree to the collateral policy
- *   and press "Submit Request".
+ * WHAT CHANGED
+ *   The student keeps a small "request list" (stored in the session). From the catalog:
+ *     - "Request to borrow"  adds the item and opens this page
+ *     - "+ List"             adds the item and stays in the catalog, so more can be added
+ *   This page shows every item of the list (each with its own quantity), ONE set of
+ *   dates / purpose / collateral, and one "Submit Request" button.
  *
- * WHAT CHANGED FROM YOUR PREVIOUS VERSION
- *   - New design: the chosen item is shown on the left, the form on the right
- *   - The item is chosen in the catalog instead of a dropdown list
- *     (the save logic below is the SAME as before, it still works
- *     with a list of items so you could allow several items later)
- *   - After saving, the student is sent to "My Borrowings"
- *   - The collateral section can be switched off in admin Settings
+ *   Saving creates ONE loan (table loans) with one row per item (table loan_items).
+ *   Your database already worked like that, so NO database change is needed. The admin
+ *   sees it as a single request marked "Bulk · N items".
  *
- * HOW SAVING WORKS  (unchanged idea)
+ * HOW SAVING WORKS
  *   1. Validate the form
  *   2. Start a DATABASE TRANSACTION (all-or-nothing)
  *   3. INSERT the loan (status = 'requested')
- *   4. Check that enough stock exists on those dates
- *      (database function item_available_on())
- *   5. INSERT the loan item, then COMMIT.
- *      If anything fails -> ROLLBACK, nothing is saved, show the error.
+ *   4. For EVERY item: check the stock on those dates (item_available_on()), INSERT the loan item
+ *   5. COMMIT. If anything fails -> ROLLBACK, nothing is saved, the error is shown.
  * ------------------------------------------------------------
  */
 $page_title = 'Borrow Request';
@@ -31,59 +26,92 @@ $nav_active = 'student_catalog.php';       // keep "Item Catalog" highlighted in
 require_once 'includes/header.php';
 require_role('student');
 
-// ------------------------------------------------------------
-// 1. WHICH ITEM? (from the URL  ?item_id=5  or from the hidden field on POST)
-// ------------------------------------------------------------
-$item_id = (int)($_POST['item_id'] ?? $_GET['item_id'] ?? 0);
+if (!isset($_SESSION['borrow_cart']) || !is_array($_SESSION['borrow_cart'])) $_SESSION['borrow_cart'] = [];
 
-$stmt = $pdo->prepare("
-    SELECT i.id, i.code, i.name, i.available_qty, i.total_qty, i.location, c.name AS category
-    FROM items i
-    JOIN categories c ON c.id = i.category_id
-    WHERE i.id = ? AND i.is_active = TRUE
-");
-$stmt->execute([$item_id]);
-$item = $stmt->fetch();
+// ------------------------------------------------------------
+// 1. CHANGE THE REQUEST LIST  (?item_id=5 adds an item, ?remove=5 takes it out)
+// ------------------------------------------------------------
+if (isset($_GET['item_id']) && $_SERVER['REQUEST_METHOD'] !== 'POST') {
+    $add = (int)$_GET['item_id'];
+    $chk = $pdo->prepare("SELECT 1 FROM items WHERE id = ? AND is_active = TRUE");
+    $chk->execute([$add]);
+    if ($chk->fetchColumn()) {
+        if (!isset($_SESSION['borrow_cart'][$add])) $_SESSION['borrow_cart'][$add] = 1;
+    } else {
+        flash_set('danger', 'That item is not available.');
+    }
+    header('Location: student_new_request.php');      // clean address, so F5 does not add it again
+    exit;
+}
+if (isset($_GET['remove'])) {
+    unset($_SESSION['borrow_cart'][(int)$_GET['remove']]);
+    header('Location: student_new_request.php');
+    exit;
+}
 
-// Unknown item -> back to the catalog
-if (!$item) {
+// ------------------------------------------------------------
+// 2. LOAD THE ITEMS OF THE LIST  (inactive / deleted items drop out automatically)
+// ------------------------------------------------------------
+$cart_items = [];
+if ($_SESSION['borrow_cart']) {
+    $ids = array_map('intval', array_keys($_SESSION['borrow_cart']));
+    $in  = implode(',', array_fill(0, count($ids), '?'));
+    $stmt = $pdo->prepare("
+        SELECT i.id, i.code, i.name, i.available_qty, i.total_qty, i.location, c.name AS category
+        FROM items i
+        JOIN categories c ON c.id = i.category_id
+        WHERE i.id IN ($in) AND i.is_active = TRUE
+        ORDER BY c.name, i.name
+    ");
+    $stmt->execute($ids);
+    $cart_items = $stmt->fetchAll();
+    // forget the ones that no longer exist
+    $found = array_map('intval', array_column($cart_items, 'id'));
+    foreach ($ids as $id) if (!in_array($id, $found, true)) unset($_SESSION['borrow_cart'][$id]);
+}
+
+// Empty list -> back to the catalog
+if (!$cart_items) {
     flash_set('danger', 'Please choose an item from the catalog first.');
     header('Location: student_catalog.php');
     exit;
 }
 
-// Photos of the item that the admin uploaded (front, back, left, right, top)
-$item_photos = item_photos((int)$item['id']);
+$is_bulk = count($cart_items) > 1;
 
 // Settings from the admin Settings page
 $max_days           = (int)get_setting($pdo, 'max_loan_days', 3);
 $require_collateral = setting_bool($pdo, 'require_collateral', true);   // stored as 'true'/'false'
-$who                = $item['location'] ? $item['location'] . ' admin' : 'facilities admin';
+$first_location     = $cart_items[0]['location'] ?? '';
+$who                = $first_location ? $first_location . ' admin' : 'facilities admin';
 
 $error = '';
 
 // ------------------------------------------------------------
-// 2. THE FORM WAS SUBMITTED
+// 3. THE FORM WAS SUBMITTED
 // ------------------------------------------------------------
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
         $borrow_date = $_POST['borrow_date'] ?? '';
         $return_date = $_POST['return_date'] ?? '';
         $purpose     = trim($_POST['purpose'] ?? '');
-        $qty         = (int)($_POST['qty'] ?? 1);
         // If collateral is switched off in Settings we still store 'KTM': in your database
         // loans.collateral is an ENUM('KTM','KTP') that cannot be empty, and the rule
         // chk_collateral requires collateral_agreed = TRUE (the INSERT below always sets it).
         $collateral  = $require_collateral ? ($_POST['collateral'] ?? 'KTM') : 'KTM';
         $agreed      = !empty($_POST['agree']);
 
-        // A list of items (this page sends one, but the code below handles many)
-        $selected_items = [['id' => $item['id'], 'qty' => $qty]];
+        // The list of items with the quantity typed for each one
+        $selected_items = [];
+        foreach ($cart_items as $ci) {
+            $q = (int)($_POST['qty'][$ci['id']] ?? 1);
+            if ($q < 1) throw new Exception('Quantity of "' . $ci['name'] . '" must be at least 1.');
+            $selected_items[] = ['id' => (int)$ci['id'], 'qty' => $q, 'name' => $ci['name']];
+        }
 
         // ---- Validation: throw an Exception = jump to the "catch" below ----
         if (empty($borrow_date) || empty($return_date)) throw new Exception("Please select both borrow and return dates.");
         if (empty($purpose))                             throw new Exception("Please provide a purpose for borrowing.");
-        if ($qty < 1)                                    throw new Exception("Quantity must be at least 1.");
         if (strtotime($return_date) < strtotime($borrow_date)) throw new Exception("Return date cannot be before borrow date.");
         if ($require_collateral && !$agreed)             throw new Exception("You must agree to have your ID card held as collateral.");
         if (!in_array($collateral, ['KTM', 'KTP']))      throw new Exception("Invalid collateral type.");
@@ -123,10 +151,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         $pdo->commit();   // success: make it permanent
+        $_SESSION['borrow_cart'] = [];   // the list is now a real request: start with an empty list next time
 
-        // "PRG" pattern (Post -> Redirect -> Get): redirecting after a successful POST means
-        // pressing F5 will NOT submit the request a second time.
-        flash_set('info', 'Your request for ' . $item['name'] . ' was submitted. Waiting for approval from the ' . $who . '.');
+        // "PRG" pattern (Post -> Redirect -> Get): pressing F5 will NOT submit the request a second time.
+        $names = implode(', ', array_map(function ($s) { return $s['name'] . ' x' . $s['qty']; }, $selected_items));
+        flash_set('info', 'Your ' . (count($selected_items) > 1 ? 'bulk request (' . count($selected_items) . ' items)' : 'request')
+            . ' for ' . $names . ' was submitted. Waiting for approval from the ' . $who . '.');
         header("Location: student_borrowings.php");
         exit;
 
@@ -142,62 +172,81 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-$is_available = (int)$item['available_qty'] > 0;
+$any_unavailable = false;
+foreach ($cart_items as $ci) if ((int)$ci['available_qty'] < 1) $any_unavailable = true;
 ?>
 
 <h1>Borrow Request</h1>
-<p class="subtitle" style="margin-bottom:6px;">Complete the request for your selected item</p>
+<p class="subtitle" style="margin-bottom:6px;">
+    <?= $is_bulk ? 'Complete the request for your ' . count($cart_items) . ' selected items (one bulk request)' : 'Complete the request for your selected item' ?>
+</p>
 <p class="breadcrumb">
     <a href="student_catalog.php" style="text-decoration:none;">Item Catalog</a> &nbsp;&gt;&nbsp; <strong>Borrow request</strong>
 </p>
 
+<?= flash_render() ?>
 <?php if ($error): ?>
     <div class="alert alert-danger"><?= e($error) ?></div>
 <?php endif; ?>
 
-<div class="split-layout" style="grid-template-columns: 370px 1fr;">
+<!-- One <form> around both columns, so the quantity boxes on the left are sent together with the details on the right -->
+<form method="POST" id="loanForm" class="split-layout split-request" novalidate>
 
-    <!-- ============ LEFT: THE SELECTED ITEM ============ -->
-    <article class="item-card" style="border:1.5px solid var(--line);">
-        <div class="item-photo" style="height:160px;">
-            <!-- Front photo from Manage Items > Photos, or the blank slot assets/img/items/<CODE>.png -->
-            <?= item_photo_html($item_photos['front'] ?? null, $item['code'], $item['name']) ?>
-        </div>
-        <div class="item-body" style="min-height:230px;">
-            <div class="item-category"><?= e($item['category']) ?></div>
-            <div class="item-name" style="font-size:1.3rem;"><?= e($item['name']) ?></div>
-            <div class="item-meta" style="font-size:0.85rem;">Storage location: <?= e($item['location'] ?: 'not set') ?></div>
-            <div style="margin-top:8px;">
-                <?php if ($is_available): ?>
-                    <span class="badge available">Available — Stock <?= (int)$item['available_qty'] ?>/<?= (int)$item['total_qty'] ?></span>
-                <?php else: ?>
-                    <span class="badge unavailable">Not Available — Stock 0/<?= (int)$item['total_qty'] ?></span>
-                <?php endif; ?>
+    <!-- ============ LEFT: THE SELECTED ITEM(S) ============ -->
+    <div class="request-items">
+        <?php foreach ($cart_items as $it):
+            $photos    = item_photos((int)$it['id']);
+            $available = (int)$it['available_qty'] > 0;
+            $qty_value = (int)($_POST['qty'][$it['id']] ?? ($_SESSION['borrow_cart'][$it['id']] ?? 1));
+        ?>
+        <article class="item-card" style="border:1.5px solid var(--line); margin-bottom:14px;">
+            <div class="item-photo" style="height:<?= $is_bulk ? '120' : '160' ?>px;">
+                <?= item_gallery_html($photos, $it['code'], $it['name']) ?>
             </div>
-
-            <!-- The other sides of the item, so the student knows exactly what they will receive -->
-            <?php if (count($item_photos) > 1): ?>
-                <div class="photo-grid" style="grid-template-columns:repeat(auto-fill,minmax(70px,1fr)); margin-top:12px;">
-                    <?php foreach (PHOTO_SIDES as $side => $label): if (empty($item_photos[$side])) continue; ?>
-                        <div>
-                            <div class="photo-thumb" style="height:56px;"><?= photo_box($item_photos[$side], $label) ?></div>
-                            <div class="item-meta" style="text-align:center;"><?= e($label) ?></div>
-                        </div>
-                    <?php endforeach; ?>
+            <div class="item-body" style="min-height:0;">
+                <div class="item-category"><?= e($it['category']) ?></div>
+                <div class="item-name" style="font-size:1.2rem;"><?= e($it['name']) ?></div>
+                <div class="item-meta" style="font-size:0.85rem;">Storage location: <?= e($it['location'] ?: 'not set') ?></div>
+                <?php if (item_clearance((int)$it['id'])['required']): ?>
+                    <div class="alert alert-info" style="margin:8px 0 0; font-size:0.8rem;">
+                        This item needs a <strong>signed permission form</strong>. After you submit, the admin will tell you where to get it,
+                        and you must upload it before you can pick the item up.
+                    </div>
+                <?php endif; ?>
+                <div style="margin-top:8px;">
+                    <?php if ($available): ?>
+                        <span class="badge available">Available — Stock <?= (int)$it['available_qty'] ?>/<?= (int)$it['total_qty'] ?></span>
+                    <?php else: ?>
+                        <span class="badge unavailable">Not Available — Stock 0/<?= (int)$it['total_qty'] ?></span>
+                    <?php endif; ?>
                 </div>
-            <?php endif; ?>
-        </div>
-    </article>
+
+                <div class="form-group" style="margin:12px 0 0;">
+                    <label for="qty<?= (int)$it['id'] ?>">Quantity <span class="req">*</span></label>
+                    <input type="number" name="qty[<?= (int)$it['id'] ?>]" id="qty<?= (int)$it['id'] ?>" class="form-control" min="1"
+                           max="<?= max(1, (int)$it['available_qty']) ?>" value="<?= max(1, $qty_value) ?>" style="max-width:140px;" required>
+                </div>
+
+                <p style="margin:10px 0 0;"><a class="link-action danger" href="?remove=<?= (int)$it['id'] ?>">Remove from request</a></p>
+            </div>
+        </article>
+        <?php endforeach; ?>
+
+        <a href="student_catalog.php" class="btn btn-outline" style="padding:10px 18px; display:inline-block;">+ Add another item</a>
+    </div>
 
     <!-- ============ RIGHT: THE FORM ============ -->
-    <form method="POST" id="loanForm" novalidate>
-        <!-- Hidden field: tells PHP which item this form is for -->
-        <input type="hidden" name="item_id" value="<?= (int)$item['id'] ?>">
-
+    <div class="request-details">
         <h2 style="font-size:1.6rem;">Borrowing details</h2>
         <p class="subtitle" style="font-size:0.85rem; font-weight:600; margin-bottom:14px;">
-            Fill in the form below an admin will verify it before you can pick up the item
+            Fill in the form below an admin will verify it before you can pick up <?= $is_bulk ? 'the items' : 'the item' ?>
         </p>
+
+        <?php if ($is_bulk): ?>
+            <div class="alert alert-info" style="margin-bottom:14px;">
+                <strong>Bulk request:</strong> these <?= count($cart_items) ?> items are sent as ONE request, so the admin sees that you are borrowing them together.
+            </div>
+        <?php endif; ?>
 
         <p class="req-note"><span class="req">*</span> Required</p>
 
@@ -212,12 +261,6 @@ $is_available = (int)$item['available_qty'] > 0;
                 <input type="date" name="return_date" id="returnDate" class="form-control"
                        min="<?= date('Y-m-d') ?>" value="<?= e($_POST['return_date'] ?? '') ?>" required>
             </div>
-        </div>
-
-        <div class="form-group">
-            <label for="qty">Quantity <span class="req">*</span></label>
-            <input type="number" name="qty" id="qty" class="form-control" min="1"
-                   max="<?= max(1, (int)$item['available_qty']) ?>" value="<?= e($_POST['qty'] ?? 1) ?>" style="max-width:140px;" required>
         </div>
 
         <div class="form-group">
@@ -238,7 +281,7 @@ $is_available = (int)$item['available_qty'] > 0;
 
             <div class="readonly-field" style="font-weight:600;">
                 Your active Student ID Card KTM/KTP will be held temporarily by the
-                <?= e($item['location'] ?: 'facilities') ?> staff as collateral for the loan period.
+                <?= e($first_location ?: 'facilities') ?> staff as collateral for the loan period.
             </div>
 
             <label class="check-row" style="margin-bottom:18px; font-weight:600;">
@@ -248,11 +291,14 @@ $is_available = (int)$item['available_qty'] > 0;
         <?php endif; ?>
 
         <div class="btn-row" style="margin-top:6px;">
-            <button type="submit" class="btn btn-primary" style="flex:1; padding:12px;" <?= $is_available ? '' : 'disabled' ?>>Submit Request</button>
+            <button type="submit" class="btn btn-primary" style="flex:1; padding:12px;" <?= $any_unavailable ? 'disabled' : '' ?>>Submit Request</button>
             <a href="student_catalog.php" class="btn btn-outline" style="padding:12px 30px;">Cancel</a>
         </div>
-    </form>
-</div>
+        <?php if ($any_unavailable): ?>
+            <p class="field-hint">One of the items is out of stock. Remove it from the request to continue.</p>
+        <?php endif; ?>
+    </div>
+</form>
 
 <script>
 // ---- Small helpers so the student can't pick impossible dates ----

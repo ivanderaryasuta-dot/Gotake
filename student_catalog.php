@@ -35,6 +35,24 @@ $page_title = 'Item Catalog';
 require_once 'includes/header.php';
 require_role('student');
 
+// ---- "+ List": put an item on the request list and stay in the catalog (bulk loans) ----
+if (!isset($_SESSION['borrow_cart']) || !is_array($_SESSION['borrow_cart'])) $_SESSION['borrow_cart'] = [];
+if (isset($_GET['add'])) {
+    $add = (int)$_GET['add'];
+    $chk = $pdo->prepare("SELECT name, available_qty FROM items WHERE id = ? AND is_active = TRUE");
+    $chk->execute([$add]);
+    $added = $chk->fetch();
+    if ($added && (int)$added['available_qty'] > 0) {
+        if (!isset($_SESSION['borrow_cart'][$add])) $_SESSION['borrow_cart'][$add] = 1;
+        flash_set('info', '"' . $added['name'] . '" was added to your request list.');
+    } else {
+        flash_set('danger', 'That item is not available.');
+    }
+    header('Location: student_catalog.php');
+    exit;
+}
+$cart_count = count($_SESSION['borrow_cart']);
+
 // ---- The filter choices: from the URL (dropdowns) or from what was chosen at login ----
 if (isset($_GET['location']) || isset($_GET['jurusan'])) {
     $_SESSION['pref_location'] = trim($_GET['location'] ?? '');
@@ -58,7 +76,7 @@ $locations = [];
 $jurusans  = [];
 foreach ($all_items as &$row) {
     $row['jurusan']     = item_jurusan((int)$row['id']);
-    $row['front_photo'] = item_photos((int)$row['id'])['front'] ?? null;
+    $row['photos'] = item_photos((int)$row['id']);     // all angles: front, back, left, right, top
     $locations[$row['location']] = $row['location'];
     if ($row['jurusan'] !== '') $jurusans[$row['jurusan']] = $row['jurusan'];
 }
@@ -82,18 +100,17 @@ $categories = array_values(array_unique(array_column($items, 'category')));
     <h1>Item Catalog</h1>
     <p class="subtitle">Choose the lab equipment or facility item you want to borrow</p>
 
-    <div class="tabs" style="margin-bottom:0;">
+    <!-- Category chips WRAP onto new lines (class cat-tabs), so many categories never need sideways scrolling -->
+    <div class="tabs cat-tabs" style="margin-bottom:0;">
         <!-- Chips: data-filter="all" shows everything -->
         <button type="button" class="tab active" data-filter="all">All</button>
         <?php foreach ($categories as $cat): ?>
             <button type="button" class="tab" data-filter="<?= e($cat) ?>"><?= e($cat) ?></button>
         <?php endforeach; ?>
-
-        <input type="text" id="catalogSearch" class="pill-input push-right" placeholder="Search item...">
     </div>
 
     <!-- Where / jurusan: choosing a value reloads the page with ?location=...&jurusan=... -->
-    <form method="GET" class="tabs" style="margin:14px 0 0;">
+    <form method="GET" class="tabs catalog-filters" style="margin:14px 0 0;">
         <select name="location" class="pill-input" onchange="this.form.submit()" aria-label="Where do you want to borrow?">
             <option value="">Anywhere (apa saja)</option>
             <?php foreach ($locations as $loc): ?>
@@ -109,10 +126,26 @@ $categories = array_values(array_unique(array_column($items, 'category')));
         <?php if ($pref_location !== '' || $pref_jurusan !== ''): ?>
             <a href="?location=&jurusan=" class="tab" style="background:#fff;">Clear filters</a>
         <?php endif; ?>
+
+        <!-- Search: a plain box on computers; on phones only the magnifying glass shows and it expands when tapped -->
+        <div class="search-box" id="searchBox">
+            <button type="button" class="search-toggle" id="searchToggle" aria-label="Search items">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="22" y2="22"/></svg>
+            </button>
+            <input type="text" id="catalogSearch" class="pill-input" placeholder="Search item..." autocomplete="off">
+        </div>
     </form>
 </section>
 
 <?= flash_render() /* e.g. "Please choose an item from the catalog first." */ ?>
+
+<?php if ($cart_count > 0): ?>
+    <div class="alert alert-info" style="display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap; align-items:center;">
+        <span>Your request list has <strong><?= (int)$cart_count ?></strong> item<?= $cart_count === 1 ? '' : 's' ?>.
+              Add more with <strong>+ List</strong>, then send them together as one request.</span>
+        <a class="btn btn-primary" href="student_new_request.php" style="padding:8px 18px;">Review &amp; submit</a>
+    </div>
+<?php endif; ?>
 
 <!-- ============ ITEM CARDS ============ -->
 <div class="catalog-grid" id="catalogGrid">
@@ -127,7 +160,7 @@ $categories = array_values(array_unique(array_column($items, 'category')));
 
         <!-- Front photo uploaded by the admin, or the blank slot assets/img/items/<CODE>.png -->
         <div class="item-photo">
-            <?= item_photo_html($it['front_photo'], $it['code'], $it['name']) ?>
+                <?= item_gallery_html($it['photos'], $it['code'], $it['name']) ?>
         </div>
 
         <div class="item-body">
@@ -135,11 +168,17 @@ $categories = array_values(array_unique(array_column($items, 'category')));
             <div class="item-name"><?= e($it['name']) ?></div>
             <div class="item-meta"><?= e($it['location'] ?: 'Location not set') ?></div>
             <div class="item-meta">Stock <?= (int)$it['available_qty'] ?>/<?= (int)$it['total_qty'] ?></div>
+            <?php if (item_clearance((int)$it['id'])['required']): ?>
+                <div class="item-meta" style="font-weight:700;">Needs signed permission form</div>
+            <?php endif; ?>
 
             <div class="item-footer">
                 <?php if ($available): ?>
                     <span class="badge available">Available</span>
-                    <a class="btn" href="student_new_request.php?item_id=<?= (int)$it['id'] ?>">Request to borrow</a>
+                    <span class="item-actions">
+                        <a class="btn btn-add" href="?add=<?= (int)$it['id'] ?>" title="Add to your request list and keep browsing">+ List</a>
+                        <a class="btn" href="student_new_request.php?item_id=<?= (int)$it['id'] ?>">Request to borrow</a>
+                    </span>
                 <?php else: ?>
                     <span class="badge unavailable">Not Available</span>
                     <span class="btn disabled">Request to borrow</span>
@@ -167,6 +206,18 @@ document.querySelectorAll('.tab[data-filter]').forEach(function (chip) {
         });
     });
 });
+
+// ---- Magnifying glass (phones): tap to expand the search box, collapse again when empty ----
+(function () {
+    var box = document.getElementById('searchBox'), input = document.getElementById('catalogSearch');
+    document.getElementById('searchToggle').addEventListener('click', function () {
+        box.classList.add('open');
+        input.focus();
+    });
+    input.addEventListener('blur', function () { if (input.value.trim() === '') box.classList.remove('open'); });
+    // Enter must not submit the filter form (the search filters live while typing)
+    input.addEventListener('keydown', function (e) { if (e.key === 'Enter') e.preventDefault(); });
+})();
 
 // ---- Live search (function lives in assets/js/main.js) ----
 document.addEventListener('DOMContentLoaded', function () {

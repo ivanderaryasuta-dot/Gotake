@@ -12,7 +12,7 @@
  *     "notes": "..." }
  *
  * RULES (checked here on the server, not only in the browser):
- *   1. every item needs its REQUIRED return photos (front/back/left/right)
+ *   1. only items that are NOT in good condition need their return photos (front/back/left/right)
  *   2. every item needs a condition: good / minor_damage / damaged
  *   3. if ANY item is not "good", a damage description is required
  *   4. the fine (denda kerusakan) is a whole number of Rupiah, 0 or more
@@ -51,12 +51,6 @@ try {
     if (!$loan)                        json_out(['success' => false, 'error' => 'Loan not found.']);
     if ($loan['status'] !== 'borrowed') json_out(['success' => false, 'error' => 'This loan is not currently borrowed.']);
 
-    // Rule 1: required return photos
-    $missing = missing_photo_sides($pdo, $loan_id, 'return');
-    if (!empty($missing)) {
-        json_out(['success' => false, 'error' => "Required return photos (*) are missing:\n" . implode("\n", $missing)]);
-    }
-
     // Rule 2 + 3: a valid condition for EVERY item of the loan
     $stmt = $pdo->prepare("SELECT li.item_id, i.name FROM loan_items li JOIN items i ON i.id = li.item_id WHERE li.loan_id = ?");
     $stmt->execute([$loan_id]);
@@ -64,12 +58,22 @@ try {
 
     $any_damage = false;
     $damaged_names = [];
+    $damaged_ids   = [];
     foreach ($loan_items as $li) {
         $cond = $conditions[$li['item_id']] ?? '';
         if (!in_array($cond, ['good', 'minor_damage', 'damaged'], true)) {
             json_out(['success' => false, 'error' => 'Please choose the condition of "' . $li['name'] . '".']);
         }
-        if ($cond !== 'good') { $any_damage = true; $damaged_names[] = $li['name']; }
+        if ($cond !== 'good') { $any_damage = true; $damaged_names[] = $li['name']; $damaged_ids[] = (int)$li['item_id']; }
+    }
+
+    // Rule 1 (CHANGED): return photos are only required for items that came back DAMAGED.
+    // Items in good condition need no return photo at all.
+    if (!empty($damaged_ids)) {
+        $missing = missing_photo_sides($pdo, $loan_id, 'return', $damaged_ids);
+        if (!empty($missing)) {
+            json_out(['success' => false, 'error' => "Damaged items need return photos. Required photos (*) are missing:\n" . implode("\n", $missing)]);
+        }
     }
     if ($any_damage && $description === '') {
         json_out(['success' => false, 'error' => 'Please describe the damage (required when an item is not in good condition).']);

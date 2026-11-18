@@ -1,0 +1,9 @@
+# Permission forms contain personal data: nobody can open this folder by typing its address.
+# They are only served through api/clearance_file.php, which checks who is logged in.
+<IfModule mod_authz_core.c>
+    Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+</IfModule>

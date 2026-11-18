@@ -76,6 +76,16 @@ $stmt = $pdo->prepare("SELECT * FROM v_loan_overview $where ORDER BY id DESC LIM
 $stmt->execute($params);
 $loans = $stmt->fetchAll();
 
+// How many items does each loan on this page have? (more than 1 = a BULK loan)
+$item_counts = [];
+if ($loans) {
+    $ids = array_map('intval', array_column($loans, 'id'));
+    $in  = implode(',', array_fill(0, count($ids), '?'));
+    $cnt = $pdo->prepare("SELECT loan_id, COUNT(*) FROM loan_items WHERE loan_id IN ($in) GROUP BY loan_id");
+    $cnt->execute($ids);
+    $item_counts = $cnt->fetchAll(PDO::FETCH_KEY_PAIR);
+}
+
 // Small helper to build a tab link that keeps the search text
 function tab_link(string $tab, string $q): string {
     return '?' . http_build_query(['status' => $tab, 'q' => $q]);
@@ -115,7 +125,12 @@ function tab_link(string $tab, string $q): string {
                 <tr>
                     <td><?= e($loan['full_name']) ?></td>
                     <td><?= e($loan['nim'] ?? '-') ?></td>
-                    <td><?= e($loan['items'] ?? 'No items') ?></td>
+                    <td>
+                        <?= e($loan['items'] ?? 'No items') ?>
+                        <?php $n_items = (int)($item_counts[$loan['id']] ?? 0); if ($n_items > 1): ?>
+                            <span class="badge borrowed" title="One request with several items">Bulk · <?= $n_items ?> items</span>
+                        <?php endif; ?>
+                    </td>
                     <td><?= e(format_date($loan['borrow_date'], 'd/m')) ?></td>
                     <td><?= e(format_date($loan['return_date'], 'd/m')) ?></td>
                     <td><?= e($loan['collateral']) ?></td>
@@ -196,12 +211,16 @@ function tab_link(string $tab, string $q): string {
         <form id="returnForm">
             <input type="hidden" id="modalLoanId">
 
-            <h3 style="margin-bottom:4px;">1. Return photos <span class="req">*</span></h3>
-            <p class="field-hint" style="margin-bottom:10px;">Front, back, left and right of every item. They are compared with the pick-up photos in the damage report.</p>
-            <div id="returnPhotos"></div>
-
-            <h3 style="margin:14px 0 8px;">2. Condition of each item <span class="req">*</span></h3>
+            <h3 style="margin:0 0 8px;">1. Condition of each item <span class="req">*</span></h3>
             <div id="returnConditions"></div>
+
+            <!-- Return photos are ONLY needed for items that are not in good condition.
+                 This block (and each item's photo grid) appears when a condition is changed. -->
+            <div id="returnPhotosWrap" style="display:none;">
+                <h3 style="margin:14px 0 4px;">2. Damage photos <span class="req">*</span></h3>
+                <p class="field-hint" style="margin-bottom:10px;">Front, back, left and right of each damaged item. They are compared with the pick-up photos in the damage report.</p>
+                <div id="returnPhotos"></div>
+            </div>
 
             <!-- Shown only when at least one item is NOT in good condition -->
             <div class="form-group" id="damageGroup" style="display:none;">
@@ -275,6 +294,8 @@ function openReturnModal(id, name) {
     document.getElementById('fineAmount').value = 0;
     document.getElementById('returnNotes').value = '';
     document.getElementById('damageGroup').style.display = 'none';
+    document.getElementById('returnPhotosWrap').style.display = 'none';
+    document.getElementById('returnConditions').innerHTML = '';
     showModal('returnModal');
 
     // 1. one photo grid per item (function from assets/js/main.js)
@@ -295,14 +316,21 @@ function openReturnModal(id, name) {
             select.addEventListener('change', updateDamageGroup);
             box.appendChild(row);
         });
+        updateDamageGroup();   // every item starts as "good", so all photo grids start hidden
     });
 }
 
-// Show the "damage description" box only when something is not in good condition
+// Show the "damage description" box AND the photo grid of an item only when that item is not in good condition
 function updateDamageGroup() {
     var damaged = false;
-    document.querySelectorAll('.condition-select').forEach(function (s) { if (s.value !== 'good') damaged = true; });
+    document.querySelectorAll('.condition-select').forEach(function (s) {
+        var bad = s.value !== 'good';
+        if (bad) damaged = true;
+        var photoBox = document.querySelector('#returnPhotos .photo-item[data-item="' + s.getAttribute('data-item') + '"]');
+        if (photoBox) photoBox.style.display = bad ? '' : 'none';
+    });
     document.getElementById('damageGroup').style.display = damaged ? '' : 'none';
+    document.getElementById('returnPhotosWrap').style.display = damaged ? '' : 'none';
 }
 
 // When the return form is submitted, send it in the background instead of leaving the page

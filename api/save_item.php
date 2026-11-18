@@ -28,11 +28,14 @@ $category_id = (int)($d['category_id'] ?? 0);
 $total       = (int)($d['total_qty'] ?? 0);
 $location    = trim($d['location'] ?? '');
 $jurusan     = trim($d['jurusan'] ?? '');   // department that owns the item ('' = shared by all)
+$needs_form  = !empty($d['requires_clearance']);                       // high-clearance item?
+$form_where  = mb_substr(trim($d['clearance_contact'] ?? ''), 0, 200); // where to get the permission
 
 if ($code === '' || $name === '') json_out(['success' => false, 'error' => 'Item code and name are required.']);
 if ($location === '')             json_out(['success' => false, 'error' => 'Storage location is required.']);
 if ($category_id < 1)             json_out(['success' => false, 'error' => 'Please choose a category.']);
 if ($total < 1)                   json_out(['success' => false, 'error' => 'Total quantity must be at least 1.']);
+if ($needs_form && $form_where === '') json_out(['success' => false, 'error' => 'Please write where students can get the higher permission.']);
 
 try {
     if ($id === 0) {
@@ -67,6 +70,8 @@ try {
     // JURUSAN is kept in uploads/items/<id>/meta.json (no database column needed)
     $meta = meta_read('items/' . $id);
     if ($jurusan !== '') $meta['jurusan'] = $jurusan; else unset($meta['jurusan']);
+    if ($needs_form) { $meta['requires_clearance'] = true; $meta['clearance_contact'] = $form_where; }
+    else             { unset($meta['requires_clearance'], $meta['clearance_contact']); }
     meta_write('items/' . $id, $meta);
 
     json_out(['success' => true]);

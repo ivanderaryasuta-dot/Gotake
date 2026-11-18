@@ -758,6 +758,7 @@ tbody tr:hover td { background: #E8F0FA; }
    ============================================================ */
 .splash { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px; background: var(--bg); }
 .splash .brand-logo { width: 300px; height: 90px; }
+.splash img.brand-logo { width: auto; height: 130px; max-width: 80vw; }
 .progress { width: 300px; height: 24px; background: #D1D1F0; border-radius: 12px; padding: 3px; }
 .progress-fill { height: 100%; width: 6%; background: #0A84FF; border-radius: 10px; animation: load 2.2s ease-out forwards; }
 @keyframes load { to { width: 100%; } }
@@ -774,9 +775,9 @@ tbody tr:hover td { background: #E8F0FA; }
     background: rgba(255,255,255,0.45);
     border-radius: 8px;
 }
-.brand-logo { height: 52px; width: 170px; object-fit: contain; }
+.brand-logo { height: 68px; width: 190px; object-fit: contain; }
 /* A real logo image keeps its own proportions (the blank placeholder box keeps the fixed width above) */
-img.brand-logo { width: auto; max-width: 260px; }
+img.brand-logo { width: auto; max-width: 320px; }
 /* inside the blue top bar the box needs light lines to be visible */
 .topbar .img-placeholder { border-color: rgba(255,255,255,0.55); background: rgba(255,255,255,0.08); }
 .item-photo .img-placeholder { width: 100%; height: 100%; border: none; border-radius: 0; background: #fff; }
@@ -807,7 +808,8 @@ img.brand-logo { width: auto; max-width: 260px; }
     :root { --topbar-height: 70px; }
 
     .topbar { padding: 0 16px; }
-    .brand-logo { height: 42px; width: 130px; }
+    .brand-logo { height: 52px; width: 150px; }
+    img.brand-logo { width: auto; max-width: 220px; }
 
     /* Sidebar hides off-screen; the hamburger slides it in */
     .sidebar { transform: translateX(-100%); box-shadow: 4px 0 20px rgba(0,0,0,0.4); top: 0; padding-top: 10px; z-index: 1200; }
@@ -910,4 +912,288 @@ a.bar-col.selected .bar-label { text-decoration: underline; }
 @media (max-width: 768px) {
     .chart-grid { grid-template-columns: 1fr; }
     .hbar-row { grid-template-columns: 105px 1fr 36px; }
+}
+
+/* ============================================================
+   19. ITEM GALLERY + FULL-SCREEN VIEWER
+   ============================================================ */
+.gallery { position: relative; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; }
+.gallery img { max-width: 100%; max-height: 100%; object-fit: contain; cursor: zoom-in; }
+
+/* Arrows on the LEFT and RIGHT edge of the picture. They fade in when the mouse is over the
+   picture (always visible on touch screens). The whole strip at each edge is clickable. */
+.gallery-arrow {
+    position: absolute; top: 0; bottom: 0; width: 34px;
+    border: none; background: linear-gradient(90deg, rgba(0,0,0,0.28), rgba(0,0,0,0));
+    color: #fff; font-size: 1.9rem; line-height: 1; cursor: pointer; padding: 0 0 3px;
+    display: flex; align-items: center; justify-content: center;
+    opacity: 0; transition: opacity 0.15s; z-index: 2;
+    text-shadow: 0 1px 4px rgba(0,0,0,0.6);
+}
+.gallery-arrow.prev { left: 0; }
+.gallery-arrow.next { right: 0; background: linear-gradient(270deg, rgba(0,0,0,0.28), rgba(0,0,0,0)); }
+.gallery:hover .gallery-arrow, .gallery:focus-within .gallery-arrow { opacity: 1; }
+.gallery-arrow:hover { background-color: rgba(0,0,0,0.18); }
+@media (hover: none) { .gallery-arrow { opacity: 1; } }
+
+/* "Front · 1/5" badge. The text is drawn by CSS from data-text, so the catalog search ignores it. */
+.gallery-count {
+    position: absolute; bottom: 5px; left: 50%; transform: translateX(-50%);
+    background: rgba(0,0,0,0.68); color: #fff; font-size: 0.64rem; font-weight: 700;
+    padding: 2px 9px; border-radius: 10px; white-space: nowrap; pointer-events: none;
+}
+.gallery-count::before { content: attr(data-text); }
+
+/* ---- Full-screen viewer ----
+   The arrows sit INSIDE the picture area (left and right edge of the picture) and appear on hover.
+   Close: the x button, Esc, or a click anywhere on the dark area outside the picture. */
+.lightbox {
+    display: none; position: fixed; inset: 0; z-index: 3000;
+    background: rgba(0,0,0,0.9);
+    align-items: center; justify-content: center;
+}
+.lightbox.open { display: flex; }
+.lb-stage { display: flex; flex-direction: column; align-items: center; gap: 12px; max-width: 92vw; }
+.lb-frame { position: relative; display: flex; align-items: center; justify-content: center; }
+.lb-frame img { display: block; max-width: min(92vw, 1100px); max-height: calc(100vh - 190px); object-fit: contain; border-radius: 8px; background: #fff; }
+.lb-caption { color: #fff; font-weight: 700; font-size: 0.95rem; }
+.lb-close {
+    position: absolute; top: 14px; right: 20px; background: none; border: none;
+    color: #fff; font-size: 2.4rem; line-height: 1; cursor: pointer; z-index: 3;
+}
+.lb-arrow {
+    position: absolute; top: 0; bottom: 0; width: 22%; min-width: 56px; max-width: 120px;
+    border: none; background: transparent; color: #fff; font-size: 3rem; line-height: 1; padding: 0 0 6px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    opacity: 0; transition: opacity 0.15s, background 0.15s;
+    text-shadow: 0 2px 8px rgba(0,0,0,0.7);
+}
+.lb-prev { left: 0;  border-radius: 8px 0 0 8px; justify-content: flex-start; padding-left: 14px; }
+.lb-next { right: 0; border-radius: 0 8px 8px 0; justify-content: flex-end;   padding-right: 14px; }
+.lb-frame:hover .lb-arrow, .lb-arrow:focus-visible { opacity: 1; }
+.lb-prev:hover { background: linear-gradient(90deg, rgba(0,0,0,0.45), rgba(0,0,0,0)); }
+.lb-next:hover { background: linear-gradient(270deg, rgba(0,0,0,0.45), rgba(0,0,0,0)); }
+@media (hover: none) { .lb-arrow { opacity: 1; width: 56px; } }
+.lb-thumbs { position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%); display: flex; gap: 8px; max-width: 90vw; overflow-x: auto; }
+.lb-thumbs button { width: 58px; height: 46px; padding: 0; border: 2px solid transparent; border-radius: 6px; overflow: hidden; background: #fff; cursor: pointer; opacity: 0.6; flex-shrink: 0; }
+.lb-thumbs button.current { border-color: var(--yellow); opacity: 1; }
+.lb-thumbs img { width: 100%; height: 100%; object-fit: cover; }
+@media (max-width: 768px) { .lb-frame img { max-height: calc(100vh - 210px); } }
+
+/* ============================================================
+   20. ADMIN: ITEM THUMBNAIL BESIDE THE ITEM NAME
+   ============================================================ */
+.item-cell { display: flex; align-items: center; gap: 12px; min-width: 170px; }
+.item-cell-text { display: flex; flex-direction: column; line-height: 1.25; }
+.item-cell-text small { color: var(--muted, #6b7685); font-weight: 600; font-size: 0.72rem; }
+.item-thumb {
+    flex: 0 0 auto; width: 52px; height: 52px; border-radius: 8px; overflow: hidden;
+    border: 1.5px solid var(--line); background: #fff;
+    display: flex; align-items: center; justify-content: center;
+}
+a.item-thumb { cursor: zoom-in; transition: transform 0.12s, box-shadow 0.12s; }
+a.item-thumb:hover { transform: scale(1.06); box-shadow: 0 2px 8px rgba(0,0,0,0.25); }
+.item-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.item-thumb.empty img { object-fit: contain; opacity: 0.8; }
+.item-photo img.item-placeholder { width: 100%; height: 100%; object-fit: cover; }
+
+/* ============================================================
+   21. NOTIFICATIONS PAGE
+   ============================================================ */
+.notif-filters { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 18px; }
+.notif-filters .pill-input { background: #fff; border: 1.5px solid var(--line); }
+.notif-day { font-size: 0.95rem; font-weight: 800; margin: 22px 0 10px; display: flex; align-items: center; gap: 10px; }
+.notif-day small { font-weight: 600; color: #6b7685; }
+.notif-card { background: #fff; border: 1.5px solid var(--line); border-left-width: 5px; border-radius: 12px; padding: 14px 16px; margin-bottom: 12px; }
+.notif-card.unread { background: #F3F8FF; }
+.notif-card.approved, .notif-card.picked_up { border-left-color: #2DA43C; }
+.notif-card.rejected, .notif-card.damage_fine { border-left-color: #E02424; }
+.notif-card.returned, .notif-card.fine_paid { border-left-color: #0A7CFF; }
+.notif-head { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+.notif-head strong { font-size: 1rem; }
+.notif-time { font-size: 0.75rem; font-weight: 700; color: #6b7685; }
+.notif-msg { margin: 6px 0 0; font-size: 0.88rem; line-height: 1.5; }
+.notif-detail { margin-top: 10px; }
+.notif-detail table { min-width: 560px; }
+.notif-new { background: #0A7CFF; color: #fff; font-size: 0.62rem; font-weight: 800; padding: 2px 8px; border-radius: 10px; margin-left: 8px; vertical-align: middle; }
+
+
+/* ============================================================
+   18. UPDATES  (bulk request, catalog filters, profile, mobile)
+   ============================================================ */
+
+/* ---- Notification page: the "Returned ... on time" line lines up with the table text ---- */
+.notif-returned {
+    margin: 0;
+    padding: 12px 16px;              /* same left padding as th / td, so the text starts in the same column */
+    font-size: 0.82rem;
+    border-top: 1px solid var(--line);
+}
+
+/* ---- Profile page: use the whole width, no empty space on the right ---- */
+.page-wide { max-width: none; width: 100%; }
+
+/* ---- Item catalog: category chips wrap onto new lines instead of scrolling sideways ---- */
+.tabs.cat-tabs { flex-wrap: wrap; overflow-x: visible; padding-bottom: 0; }
+.tabs.cat-tabs .tab { flex-shrink: 1; }
+
+/* ---- Catalog: "+ List" button and the group of buttons on a card ---- */
+.item-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.item-footer .btn.btn-add { background: #fff; color: #3F6B9E; border: 1.5px solid #3F6B9E; }
+
+/* ---- Catalog search box: normal pill on computers; the magnifier button is hidden there ---- */
+.search-box { display: flex; align-items: center; margin-left: auto; }
+
+.search-toggle { display: none; }
+
+/* ---- Borrow request: item(s) on the left, details on the right (stacked on phones, item first) ---- */
+.split-layout.split-request { grid-template-columns: 370px 1fr; }
+
+@media (max-width: 768px) {
+    /* Borrow page: ONE column. The item description comes first, the borrowing details under it. */
+    .split-layout.split-request { grid-template-columns: 1fr; }
+
+    /* Login / register: Troli.jpg becomes the background of the whole page */
+    .auth-body {
+        background: #D8D8D8 url('../img/Troli.jpg') center center / cover no-repeat;
+        background-attachment: fixed;
+    }
+    .auth-panel { padding: 26px 16px; }
+    .auth-card {
+        background: rgba(255, 255, 255, 0.93);     /* white card so the form stays easy to read on top of the picture */
+        border-radius: 18px;
+        padding: 24px 20px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
+    }
+
+    /* Catalog: smaller location / jurusan menus that share one row with the magnifier */
+    .catalog-filters { flex-wrap: wrap; gap: 8px; }
+    .catalog-filters .pill-input {
+        font-size: 0.72rem;
+        padding: 7px 10px;
+        min-width: 0;
+        flex: 1 1 0;
+        width: auto;
+        text-overflow: ellipsis;
+    }
+    .catalog-filters .tab { font-size: 0.72rem; padding: 6px 12px; }
+
+    /* Magnifier: a round button that expands into the full search box when tapped */
+    .search-box { margin-left: 0; flex: 0 0 auto; position: relative; }
+    .search-toggle {
+        display: inline-flex; align-items: center; justify-content: center;
+        width: 34px; height: 34px; border: none; border-radius: 50%;
+        background: var(--card-grey); color: #1b2a41; cursor: pointer;
+    }
+    .search-box .pill-input {
+        width: 0; min-width: 0; padding-left: 0; padding-right: 0; opacity: 0; flex: 0 0 auto;
+        transition: width 0.25s ease, opacity 0.2s ease, padding 0.25s ease;
+    }
+    .search-box.open { flex: 1 1 100%; }
+    .search-box.open .search-toggle { display: none; }
+    .search-box.open .pill-input { width: 100%; padding: 9px 16px; opacity: 1; }
+}
+
+/* the old phone rule made EVERY row of tabs scroll sideways; the catalog chips now wrap instead */
+@media (max-width: 480px) {
+    .tabs.cat-tabs { flex-wrap: wrap; overflow-x: visible; }
+}
+
+/* ---- Permission form (high-clearance items) ---- */
+.notif-card.clearance_requested { border-left-color: #E0A800; }
+.clearance-box { border: 1.5px dashed #E0A800; background: #FFFBEA; }
+
+/* ============================================================
+   19. BOOTSTRAP TOASTS  (flash messages + notification pop-up)
+   Bootstrap is loaded in a low-priority layer (assets/css/bootstrap-layer.css),
+   so the global reset at the top of this file (padding: 0 for everything)
+   would flatten the toasts. These rules give them their spacing back.
+   ============================================================ */
+.toast-header  { padding: 0.55rem 0.8rem; }
+.toast-body    { padding: 0.8rem; }
+.toast         { font-size: 0.9rem; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25); }
+.toast .btn-close { box-sizing: content-box; padding: 0.25em; }
+.toast-container .toast + .toast { margin-top: 0.75rem; }
+.gt-popup .notice:last-of-type { margin-bottom: 12px; }
+
+
+/* ============================================================
+   20. NEW SIDEBAR + TOP BAR LOOK  (icons, rounded menu items, bell, name)
+   ============================================================ */
+
+/* ---- Top bar ---- */
+.topbar { box-shadow: 0 2px 12px rgba(0, 0, 0, 0.18); }
+.topbar-right { display: flex; align-items: center; gap: 14px; }
+.topbar-user { display: flex; flex-direction: column; align-items: flex-end; color: #fff; line-height: 1.25; }
+.topbar-name { font-size: 0.88rem; font-weight: 700; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.topbar-role { font-size: 0.7rem; letter-spacing: 0.6px; text-transform: uppercase; opacity: 0.8; }
+.user-avatar { transition: transform 0.15s, border-color 0.15s; }
+.user-avatar:hover { transform: scale(1.06); border-color: rgba(255, 255, 255, 0.7); }
+
+.topbar-bell {
+    position: relative;
+    width: 42px; height: 42px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(255, 255, 255, 0.16);
+    color: #fff;
+    transition: background 0.15s;
+}
+.topbar-bell:hover { background: rgba(255, 255, 255, 0.28); }
+.topbar-badge {
+    position: absolute; top: -3px; right: -3px;
+    min-width: 18px; height: 18px; padding: 0 5px;
+    border-radius: 9px;
+    background: #E02424; color: #fff;
+    font-size: 0.68rem; font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+    border: 2px solid var(--blue-dark);
+}
+.menu-toggle { display: none; line-height: 0; padding: 4px; }
+.menu-toggle svg { width: 26px; height: 26px; }
+
+/* ---- Sidebar ---- */
+.sidebar-title {
+    font-size: 0.7rem; font-weight: 700; letter-spacing: 1.4px;
+    color: #64748B;
+    padding: 22px 20px 14px;
+    border-bottom: 0;
+    margin-bottom: 4px;
+}
+.sidebar nav { padding: 0 10px 20px; gap: 4px; }
+.sidebar nav a {
+    border-left: 0;
+    border-radius: 10px;
+    padding: 10px 12px;
+    color: #334155;
+    transition: background 0.15s, color 0.15s;
+}
+.sidebar nav a:hover { background: #EEF4FC; color: var(--blue-dark); }
+.sidebar nav a.active {
+    background: var(--nav-active);
+    color: var(--blue-dark);
+    box-shadow: inset 4px 0 0 var(--blue);
+}
+.nav-icon {
+    width: 22px; height: 22px;
+    border: 0; border-radius: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+    color: #64748B;
+    flex-shrink: 0;
+}
+.nav-icon svg { width: 20px; height: 20px; }
+.sidebar nav a:hover .nav-icon,
+.sidebar nav a.active .nav-icon { color: var(--blue-dark); }
+
+.sidebar nav a .notif-new { margin-left: auto; }
+.nav-divider { height: 1px; background: var(--line); margin: 8px 6px; }
+.sidebar nav a.nav-logout:hover { background: #FDECEC; color: #B42318; }
+.sidebar nav a.nav-logout:hover .nav-icon { color: #B42318; }
+
+@media (max-width: 768px) {
+    .topbar-user { display: none; }
+    .topbar-right { gap: 10px; }
+    .topbar-bell { width: 38px; height: 38px; }
+    .user-avatar { width: 42px; height: 42px; font-size: 0.85rem; }
+    .menu-toggle { display: block; }
 }

@@ -126,7 +126,7 @@ function nice_condition(?string $c): string { return $c ? ucfirst(str_replace('_
         <tbody>
         <?php foreach ($items as $it): ?>
             <tr>
-                <td><?= e($it['name']) ?> (<?= e($it['code']) ?>)</td>
+                <td><?= item_name_cell((int)$it['item_id'], $it['name'], $it['code']) ?></td>
                 <td><?= (int)$it['qty'] ?></td>
                 <td><?= e($it['location']) ?></td>
                 <td><?= e(nice_condition($it['condition_before'])) ?></td>
@@ -136,6 +136,45 @@ function nice_condition(?string $c): string { return $c ? ucfirst(str_replace('_
         </tbody>
     </table>
 </div>
+
+<!-- ============ 2b. PERMISSION FORM (high-clearance items) ============ -->
+<?php
+$clr_items = loan_clearance_items($pdo, $loan_id);
+if ($clr_items):
+    $clr        = loan_clearance_state($loan_id);
+    $clr_open   = in_array($loan['status'], ['requested', 'approved'], true);   // before hand-over
+?>
+<div class="panel clearance-box">
+    <h3>Signed permission form required</h3>
+    <p class="muted" style="margin-bottom:10px;">
+        These items need higher permission. The student must upload the signed form before you can hand the items over,
+        and should bring the original when picking up.
+    </p>
+    <div class="readonly-label">Items and where the student can get the permission</div>
+    <div class="readonly-field" style="white-space:normal; line-height:1.6;">
+        <?php foreach ($clr_items as $ci): ?>
+            <strong><?= e($ci['name']) ?></strong> — <?= e($ci['contact'] !== '' ? $ci['contact'] : 'no place written (edit the item in Manage Items)') ?><br>
+        <?php endforeach; ?>
+    </div>
+
+    <div class="readonly-label">Form status</div>
+    <div class="readonly-field" style="white-space:normal;">
+        <?php if ($clr['file']): ?>
+            <span class="badge approved">Uploaded</span>
+            <?= e(format_date($clr['uploaded_at'], 'd M Y H:i')) ?> —
+            <a class="link-action" href="api/clearance_file.php?loan_id=<?= (int)$loan['id'] ?>" target="_blank"><?= e($clr['original'] ?: 'Open the form') ?></a>
+        <?php elseif ($clr['requested_at']): ?>
+            <span class="badge pending">Waiting for the student</span> Asked on <?= e(format_date($clr['requested_at'], 'd M Y H:i')) ?>
+        <?php else: ?>
+            <span class="badge rejected">Not asked yet</span>
+        <?php endif; ?>
+    </div>
+
+    <?php if (!$clr['requested_at'] && $clr_open): ?>
+        <button class="btn btn-primary" onclick="requestClearance()">Ask for permission form</button>
+    <?php endif; ?>
+</div>
+<?php endif; ?>
 
 <!-- ============ 3. PHOTOS ============ -->
 <h2 class="section-title">Photos: pick-up vs return</h2>
@@ -197,6 +236,13 @@ function verifyPhotos() {
     if (!confirm('Confirm that these photos are correct?')) return;
     postJSON('api/verify_photos.php', { loan_id: LOAN_ID }).then(function (data) {
         if (data.success) location.reload(); else alert('Error: ' + data.error);
+    }).catch(function (err) { alert('Network error: ' + err); });
+}
+
+function requestClearance() {
+    if (!confirm('Ask the student for the signed permission form? They will be notified and told where to get it.')) return;
+    postJSON('api/request_clearance.php', { loan_id: LOAN_ID }).then(function (data) {
+        if (data.success) { if (data.warning) alert(data.warning); location.reload(); } else alert('Error: ' + data.error);
     }).catch(function (err) { alert('Network error: ' + err); });
 }
 

@@ -78,6 +78,9 @@ $items = $stmt->fetchAll();
 // Add what is stored in the uploads folder: the jurusan, and how many of the 4 REQUIRED photos exist
 foreach ($items as &$row) {
     $row['jurusan']     = item_jurusan((int)$row['id']);
+    $clr                = item_clearance((int)$row['id']);
+    $row['requires_clearance'] = $clr['required'];
+    $row['clearance_contact']  = $clr['contact'];
     $row['photo_count'] = count(array_intersect(array_keys(item_photos((int)$row['id'])), PHOTO_REQUIRED));
 }
 unset($row);
@@ -129,7 +132,7 @@ function cat_link(int $cat, string $status): string {
             <?php else: ?>
                 <?php foreach ($items as $it): $in_stock = (int)$it['available_qty'] > 0; ?>
                 <tr>
-                    <td><?= e($it['name']) ?></td>
+                    <td><?= item_name_cell((int)$it['id'], $it['name'], $it['code']) ?></td>
                     <td><?= e($it['category']) ?></td>
                     <td><?= e($it['location'] ?: '—') ?></td>
                     <td><?= e($it['jurusan'] ?: 'All') ?></td>
@@ -207,6 +210,17 @@ function cat_link(int $cat, string $status): string {
                 </datalist>
             </div>
 
+            <div class="form-group">
+                <label class="check-row" style="text-transform:none; font-weight:600;">
+                    <input type="checkbox" id="item_clearance"> Needs a signed permission form (high clearance)
+                </label>
+                <div id="clearanceWhereBox" style="display:none; margin-top:8px;">
+                    <label for="item_clearance_contact">Where can the student get the permission? <span class="req">*</span></label>
+                    <input type="text" id="item_clearance_contact" class="form-control" maxlength="200"
+                           placeholder="e.g. Head of Laboratory, Building B room 204">
+                </div>
+            </div>
+
             <p class="req-note"><span class="req">*</span> Required. Add the item photos afterwards with the "Photos" button in the table.</p>
 
             <div style="display:flex; gap:10px; justify-content:flex-end;">
@@ -247,11 +261,20 @@ function openItemModal(btn) {
     document.getElementById('item_total').value    = it ? it.total_qty : 1;
     document.getElementById('item_location').value = it && it.location ? it.location : '';
     document.getElementById('item_jurusan').value  = it && it.jurusan ? it.jurusan : '';
+    document.getElementById('item_clearance').checked = !!(it && it.requires_clearance);
+    document.getElementById('item_clearance_contact').value = it && it.clearance_contact ? it.clearance_contact : '';
+    toggleClearanceBox();
     if (it) document.getElementById('item_category').value = it.category_id;
 
     document.getElementById('itemError').style.display = 'none';
     showModal('itemModal');
 }
+
+// The "where to get permission" box only shows when the checkbox is ticked
+function toggleClearanceBox() {
+    document.getElementById('clearanceWhereBox').style.display = document.getElementById('item_clearance').checked ? '' : 'none';
+}
+document.getElementById('item_clearance').addEventListener('change', toggleClearanceBox);
 
 // Save (add or edit)
 document.getElementById('itemForm').addEventListener('submit', function (event) {
@@ -264,7 +287,9 @@ document.getElementById('itemForm').addEventListener('submit', function (event) 
         category_id: document.getElementById('item_category').value,
         total_qty:   document.getElementById('item_total').value,
         location:    document.getElementById('item_location').value.trim(),
-        jurusan:     document.getElementById('item_jurusan').value.trim()
+        jurusan:     document.getElementById('item_jurusan').value.trim(),
+        requires_clearance: document.getElementById('item_clearance').checked,
+        clearance_contact:  document.getElementById('item_clearance_contact').value.trim()
     }).then(function (data) {
         if (data.success) { location.reload(); return; }
         var box = document.getElementById('itemError');

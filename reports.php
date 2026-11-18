@@ -1,214 +1,222 @@
 <?php
 /**
- * reports.php  —  REPORTS  (NEW PAGE, "Reports" in PBL.pdf)
+ * reports.php  —  REPORTS   (REWRITTEN: the admin picks a date range first)
  * ------------------------------------------------------------
- * WHAT THIS PAGE SHOWS
- *   - 4 numbers: transactions this month, most borrowed item,
- *     average loan length, overdue rate
- *   - A bar chart: number of loans per month (last 6 months, all students)
- *   - "Top borrowed items": the 5 most borrowed items
- *   - A button that downloads everything as a CSV file (opens in Excel)
+ * HOW IT WORKS NOW
+ *   1. Opening the page shows ONLY a date-range form (from / to, any dates).
+ *   2. After the admin presses "Show report", everything below is calculated
+ *      for the loans whose BORROW DATE is inside that range:
+ *        - 4 summary numbers
+ *        - borrow trend per month, borrowing by category, requests by status,
+ *          on-time vs late returns, damage reports and fines per month
+ *        - top borrowed items
+ *        - the LOAN LIST: who borrowed what, when, due date, return time, fine
+ *          (a bulk loan with several items is ONE row)
+ *   3. "Download Excel" gives the same loan list as an .xlsx file
+ *      (api/export_report.php?from=...&to=...).
  *
- * DETAIL CHARTS (NEW in v3), all calculated from tables you already have
- *   - Click a month bar        -> the loans of that month are listed below the charts
- *   - Borrowing by category    -> horizontal bars
- *   - Request status           -> how many requests are pending / approved / rejected / ...
- *   - On-time vs late returns  -> pie chart (returns.was_late)
- *   - Damage reports and fines per month (returns.compensation_amount, loan_items.condition_after)
- *
- * WHERE THE NUMBERS COME FROM
- *   Your database already has "views" (saved queries) made for this page:
- *     v_report_summary   -> the 3 numbers (transactions, avg return days, overdue rate)
- *     v_report_monthly   -> loans per month (counted when items are HANDED OVER)
- *     v_report_top_items -> items ranked by how often they were borrowed
- *   So this page only READS them; the maths lives in the database.
+ * The numbers come straight from the tables (loans, loan_items, returns ...),
+ * not from the old v_report_* views, because those views cannot filter by date.
  * ------------------------------------------------------------
  */
 $page_title = 'Reports';
 require_once 'includes/header.php';
 require_role('admin');
+require_once 'includes/report_data.php';
 
-// ---- 1. The 3 summary numbers come straight from the database VIEW v_report_summary
-//         (your schema already calculates them, so we just read them).
-//           transactions_this_month = loans handed over this month
-//           avg_return_days         = average days between hand-over and return
-//           overdue_rate_pct        = % of returns that were late (returns.was_late)
-$summary = $pdo->query("SELECT * FROM v_report_summary")->fetch() ?: [];
+// ---- 1. Which dates did the admin choose? ----
+[$from, $to, $range_error] = report_parse_range($_GET['from'] ?? '', $_GET['to'] ?? '');
+$has_range = ($from !== '' && $range_error === '');
 
-$transactions = (int)($summary['transactions_this_month'] ?? 0);
-$avg_text     = isset($summary['avg_return_days'])  ? number_format((float)$summary['avg_return_days'], 1) . ' days' : '—';
-$overdue_text = isset($summary['overdue_rate_pct']) ? number_format((float)$summary['overdue_rate_pct'], 1) . '%'   : '—';
+if ($has_range) {
+    // ---- 2. The loan list (the "new data") ----
+    $loans = report_loans($pdo, $from, $to);
 
-// ---- 2. Top borrowed items: VIEW v_report_top_items (already ranked) ----
-$top_items = $pdo->query("
-    SELECT name, category, times_borrowed AS times
-    FROM v_report_top_items
-    ORDER BY rank, name
-    LIMIT 5
-")->fetchAll();
-$most_borrowed = $top_items[0]['name'] ?? '—';
-
-// ---- 3. Loans per month, last 6 months: VIEW v_report_monthly ----
-$base   = strtotime(date('Y-m-01'));
-$months = [];
-for ($i = 5; $i >= 0; $i--) {
-    $ts = strtotime("-$i months", $base);
-    $months[date('Y-m', $ts)] = ['label' => date('M', $ts), 'count' => 0];
-}
-$stmt = $pdo->prepare("
-    SELECT to_char(month, 'YYYY-MM') AS ym, transactions
-    FROM v_report_monthly
-    WHERE month >= ?
-");
-$stmt->execute([date('Y-m-01', strtotime('-5 months', $base))]);
-foreach ($stmt->fetchAll() as $row) {
-    if (isset($months[$row['ym']])) $months[$row['ym']]['count'] = (int)$row['transactions'];
-}
-$max_count = max(1, max(array_column($months, 'count')));
-
-// ================= DETAIL CHARTS (v3) =================
-
-// ---- A. Borrowing by category (items handed over) ----
-$by_category = $pdo->query("
-    SELECT c.name, COUNT(*) AS total
-    FROM loan_items li
-    JOIN loans l      ON l.id = li.loan_id AND l.handed_over_at IS NOT NULL
-    JOIN items i      ON i.id = li.item_id
-    JOIN categories c ON c.id = i.category_id
-    GROUP BY c.name ORDER BY total DESC
-")->fetchAll();
-
-// ---- B. Requests by status (status is an enum, so we show it as text) ----
-$status_rows = $pdo->query("SELECT status::text AS status, COUNT(*) AS total FROM loans GROUP BY 1")->fetchAll(PDO::FETCH_KEY_PAIR);
-$status_chart = [
-    'requested' => ['Pending',  'yellow'],
-    'approved'  => ['Approved', 'blue'],
-    'borrowed'  => ['Borrowed', 'blue'],
-    'returned'  => ['Returned', 'green'],
-    'rejected'  => ['Rejected', 'red'],
-];
-
-// ---- C. On-time vs late returns (pie chart) ----
-$r = $pdo->query("SELECT COUNT(*) FILTER (WHERE NOT was_late) AS on_time, COUNT(*) FILTER (WHERE was_late) AS late FROM returns")->fetch();
-$on_time = (int)$r['on_time'];
-$late    = (int)$r['late'];
-$returns_total = $on_time + $late;
-$on_time_pct   = $returns_total > 0 ? round(100 * $on_time / $returns_total) : 0;
-
-// ---- D. Damage reports and fines per month (last 6 months) ----
-$damage_months = [];
-foreach ($months as $ym => $m) $damage_months[$ym] = ['label' => $m['label'], 'count' => 0, 'fines' => 0.0];
-$stmt = $pdo->prepare("
-    SELECT to_char(r.returned_at, 'YYYY-MM') AS ym, COUNT(*) AS total, COALESCE(SUM(r.compensation_amount), 0) AS fines
-    FROM returns r
-    WHERE r.returned_at >= ?
-      AND (r.compensation_amount > 0
-           OR EXISTS (SELECT 1 FROM loan_items li
-                       WHERE li.loan_id = r.loan_id AND li.condition_after IS NOT NULL AND li.condition_after <> 'good'))
-    GROUP BY 1
-");
-$stmt->execute([date('Y-m-01', strtotime('-5 months', $base))]);
-foreach ($stmt->fetchAll() as $row) {
-    if (isset($damage_months[$row['ym']])) {
-        $damage_months[$row['ym']]['count'] = (int)$row['total'];
-        $damage_months[$row['ym']]['fines'] = (float)$row['fines'];
+    // ---- 3. Summary numbers, worked out from that list ----
+    $total_requests = count($loans);
+    $handed_over    = 0;
+    $on_time = 0; $late = 0;
+    $total_fines = 0.0; $fines_paid = 0.0;
+    $by_status = [];
+    foreach ($loans as $l) {
+        if ($l['handed_over_at']) $handed_over++;
+        if ($l['returned_at']) { if ($l['was_late']) $late++; else $on_time++; }
+        $total_fines += $l['fine'];
+        if ($l['fine'] > 0 && $l['fine_paid']) $fines_paid += $l['fine'];
+        $st = $l['status'];
+        $by_status[$st] = ($by_status[$st] ?? 0) + 1;
     }
-}
-$max_damage = max(1, max(array_column($damage_months, 'count')));
+    $returns_total = $on_time + $late;
+    $on_time_pct   = $returns_total > 0 ? (int)round(100 * $on_time / $returns_total) : 0;
+    $late_text     = $returns_total > 0 ? (100 - $on_time_pct) . '%' : '—';
 
-// ---- E. Month detail: ?month=2026-09 lists the loans handed over in that month ----
-$sel_month = $_GET['month'] ?? '';
-$month_loans = [];
-if (preg_match('/^\d{4}-\d{2}$/', $sel_month)) {
+    // ---- 4. Items handed over in the range: top items + categories ----
     $stmt = $pdo->prepare("
-        SELECT v.id, v.full_name, v.nim, v.items, v.borrow_date, v.return_date, v.display_status
-        FROM v_loan_overview v
-        JOIN loans l ON l.id = v.id
-        WHERE to_char(l.handed_over_at, 'YYYY-MM') = ?
-        ORDER BY l.handed_over_at DESC
+        SELECT i.name, c.name AS category, COUNT(*) AS times
+        FROM loan_items li
+        JOIN loans l      ON l.id = li.loan_id
+        JOIN items i      ON i.id = li.item_id
+        JOIN categories c ON c.id = i.category_id
+        WHERE l.borrow_date BETWEEN ? AND ? AND l.handed_over_at IS NOT NULL
+        GROUP BY i.name, c.name
+        ORDER BY times DESC, i.name
     ");
-    $stmt->execute([$sel_month]);
-    $month_loans = $stmt->fetchAll();
-} else {
-    $sel_month = '';
+    $stmt->execute([$from, $to]);
+    $item_rows = $stmt->fetchAll();
+
+    $top_items = array_slice($item_rows, 0, 5);
+    $most_borrowed = $top_items[0]['name'] ?? '—';
+    $by_category = [];
+    foreach ($item_rows as $r) $by_category[$r['category']] = ($by_category[$r['category']] ?? 0) + (int)$r['times'];
+    arsort($by_category);
+
+    // ---- 5. One bar per month of the range (borrow trend + damage/fines) ----
+    $months = [];
+    $cur = new DateTime(substr($from, 0, 7) . '-01');
+    $end = new DateTime(substr($to, 0, 7) . '-01');
+    while ($cur <= $end) {
+        $months[$cur->format('Y-m')] = ['label' => $cur->format('M y'), 'count' => 0, 'damage' => 0, 'fines' => 0.0];
+        $cur->modify('+1 month');
+    }
+    foreach ($loans as $l) {
+        $ym = substr($l['borrow_date'], 0, 7);
+        if (!isset($months[$ym])) continue;
+        $months[$ym]['count']++;
+        if ($l['returned_at'] && ($l['fine'] > 0 || $l['has_damage'])) {
+            $months[$ym]['damage']++;
+            $months[$ym]['fines'] += $l['fine'];
+        }
+    }
+    $max_count  = max(1, max(array_column($months, 'count')));
+    $max_damage = max(1, max(array_column($months, 'damage')));
+
+    $status_chart = [
+        'requested' => ['Pending',  'yellow'],
+        'approved'  => ['Approved', 'blue'],
+        'borrowed'  => ['Borrowed', 'blue'],
+        'returned'  => ['Returned', 'green'],
+        'rejected'  => ['Rejected', 'red'],
+    ];
+
+    $excel_url = 'api/export_report.php?' . http_build_query(['from' => $from, 'to' => $to]);
 }
 ?>
 
 <h1>Reports</h1>
-<p class="subtitle">Borrowing trends and item usage across campus</p>
+<p class="subtitle">Choose a date range to see the borrowing report for that period</p>
+
+<!-- ============ STEP 1: DATE RANGE (always shown) ============ -->
+<form method="GET" class="panel" style="display:flex; gap:16px; align-items:flex-end; flex-wrap:wrap; margin-bottom:22px;">
+    <div class="form-group" style="margin:0;">
+        <label for="from">From <span class="req">*</span></label>
+        <input type="date" id="from" name="from" class="form-control" value="<?= e($from) ?>" required>
+    </div>
+    <div class="form-group" style="margin:0;">
+        <label for="to">To <span class="req">*</span></label>
+        <input type="date" id="to" name="to" class="form-control" value="<?= e($to) ?>" required>
+    </div>
+    <button type="submit" class="btn btn-primary" style="padding:11px 26px;">Show report</button>
+    <?php if ($has_range): ?>
+        <a href="reports.php" class="btn btn-outline" style="padding:11px 22px;">Clear</a>
+    <?php endif; ?>
+    <div class="field-hint" style="flex-basis:100%; margin:0;">Loans are included when their <strong>borrow date</strong> falls inside this range (both days included).</div>
+</form>
+
+<?php if ($range_error !== ''): ?>
+    <div class="alert alert-danger"><?= e($range_error) ?></div>
+<?php endif; ?>
+
+<?php if (!$has_range): ?>
+    <div class="panel"><p class="muted" style="margin:0; text-align:center; padding:18px;">
+        No data is shown yet. Pick a start and end date above, then press <strong>Show report</strong>.
+    </p></div>
+
+<?php else: ?>
+
+<p class="subtitle" style="margin-bottom:10px;">
+    Showing <strong><?= e(format_date($from)) ?></strong> to <strong><?= e(format_date($to)) ?></strong>
+</p>
 
 <div class="stat-row" style="margin:10px 0 26px;">
-    <div class="stat-card blue"><div class="stat-label">Transactions this month</div><div class="stat-value"><?= $transactions ?></div></div>
+    <div class="stat-card blue"><div class="stat-label">Loan requests</div><div class="stat-value"><?= $total_requests ?></div></div>
+    <div class="stat-card blue"><div class="stat-label">Handed over</div><div class="stat-value"><?= $handed_over ?></div></div>
     <div class="stat-card blue"><div class="stat-label">Most borrowed item</div><div class="stat-value text"><?= e($most_borrowed) ?></div></div>
-    <div class="stat-card blue"><div class="stat-label">Avg. return time</div><div class="stat-value"><?= e($avg_text) ?></div></div>
-    <div class="stat-card blue"><div class="stat-label">Overdue rate</div><div class="stat-value"><?= e($overdue_text) ?></div></div>
+    <div class="stat-card blue"><div class="stat-label">Late returns</div><div class="stat-value"><?= e($late_text) ?></div></div>
+    <div class="stat-card blue"><div class="stat-label">Fines (paid / total)</div><div class="stat-value text"><?= e(format_rupiah($fines_paid)) ?> / <?= e(format_rupiah($total_fines)) ?></div></div>
 </div>
 
-<h3 style="margin-bottom:10px;">Borrow trend (last 6 months)</h3>
-<div class="chart-box">
-    <div class="bar-chart">
-        <?php foreach ($months as $ym => $m):
+<!-- ============ THE LOAN LIST + EXCEL DOWNLOAD ============ -->
+<div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:10px;">
+    <h3 style="margin:0;">Who borrowed what (<?= $total_requests ?>)</h3>
+    <a href="<?= e($excel_url) ?>" class="btn btn-primary" style="padding:10px 22px;">Download Excel</a>
+</div>
+<div class="table-wrapper">
+    <table style="min-width:1100px;">
+        <thead>
+            <tr>
+                <th>Loan</th><th>Student</th><th>Student ID</th><th>Items borrowed</th><th>Borrowed</th>
+                <th>Due</th><th>Returned</th><th>Fine</th><th>Status</th><th>Detail</th>
+            </tr>
+        </thead>
+        <tbody>
+        <?php if (empty($loans)): ?>
+            <tr><td colspan="10" class="muted" style="text-align:center;">No loans in this date range.</td></tr>
+        <?php else: foreach ($loans as $l): ?>
+            <tr>
+                <td>#<?= (int)$l['id'] ?><?php if ($l['item_count'] > 1): ?> <span class="badge borrowed" title="One request with several items">Bulk · <?= (int)$l['item_count'] ?></span><?php endif; ?></td>
+                <td><?= e($l['full_name']) ?></td>
+                <td><?= e($l['nim'] ?? '-') ?></td>
+                <td style="white-space:normal; min-width:200px;"><?= e($l['items'] ?? '') ?></td>
+                <td><?= e(format_date($l['borrow_date'])) ?></td>
+                <td><?= e(format_date($l['return_date'])) ?></td>
+                <td><?= $l['returned_at'] ? e(format_date($l['returned_at'], 'd M Y H:i')) . ($l['was_late'] ? ' (late)' : '') : '<span class="muted">Not returned</span>' ?></td>
+                <td><?= $l['fine'] > 0 ? e(report_fine_text($l)) : '<span class="muted">No fine</span>' ?></td>
+                <td><?= status_badge($l['display_status'] ?? $l['status']) ?></td>
+                <td><a class="link-action" href="admin_loan_detail.php?id=<?= (int)$l['id'] ?>">Detail</a></td>
+            </tr>
+        <?php endforeach; endif; ?>
+        </tbody>
+    </table>
+</div>
+
+<!-- ============ TREND ============ -->
+<h3 style="margin:26px 0 10px;">Borrow trend (loan requests per month)</h3>
+<div class="chart-box" style="overflow-x:auto;">
+    <div class="bar-chart" style="min-width:<?= max(300, count($months) * 56) ?>px;">
+        <?php foreach ($months as $m):
             $ratio  = $m['count'] / $max_count;
             $height = round(10 + 65 * $ratio);
             $color  = $ratio >= 0.66 ? 'high' : ($ratio >= 0.33 ? 'mid' : 'low');
         ?>
-            <!-- Each bar is a link: click it to see the loans of that month (listed under the charts) -->
-            <a class="bar-col <?= $sel_month === $ym ? 'selected' : '' ?>" href="?month=<?= e($ym) ?>#monthDetail" title="Show the loans of <?= e($m['label']) ?>">
+            <div class="bar-col">
                 <div class="bar-value"><?= (int)$m['count'] ?></div>
                 <div class="bar <?= $color ?>" style="height:<?= $height ?>%;"></div>
                 <div class="bar-label"><?= e($m['label']) ?></div>
-            </a>
+            </div>
         <?php endforeach; ?>
     </div>
 </div>
-<p class="field-hint">Click a month to see its loans.</p>
-
-<?php if ($sel_month !== ''): ?>
-<div id="monthDetail" style="margin-top:18px;">
-    <h3 style="margin-bottom:10px;">Loans handed over in <?= e(date('F Y', strtotime($sel_month . '-01'))) ?> (<?= count($month_loans) ?>)</h3>
-    <div class="table-wrapper">
-        <table>
-            <thead><tr><th>Student</th><th>Student ID</th><th>Items</th><th>Borrow date</th><th>Return date</th><th>Status</th><th>Detail</th></tr></thead>
-            <tbody>
-            <?php if (empty($month_loans)): ?>
-                <tr><td colspan="7" class="muted" style="text-align:center;">No loans in this month.</td></tr>
-            <?php else: foreach ($month_loans as $ml): ?>
-                <tr>
-                    <td><?= e($ml['full_name']) ?></td>
-                    <td><?= e($ml['nim'] ?? '-') ?></td>
-                    <td><?= e($ml['items'] ?? '') ?></td>
-                    <td><?= e(format_date($ml['borrow_date'])) ?></td>
-                    <td><?= e(format_date($ml['return_date'])) ?></td>
-                    <td><?= status_badge($ml['display_status']) ?></td>
-                    <td><a class="link-action" href="admin_loan_detail.php?id=<?= (int)$ml['id'] ?>">Detail</a></td>
-                </tr>
-            <?php endforeach; endif; ?>
-            </tbody>
-        </table>
-    </div>
-</div>
-<?php endif; ?>
 
 <!-- ============ DETAIL CHARTS ============ -->
 <div class="chart-grid" style="margin-top:26px;">
 
     <div class="chart-box">
         <h3 style="margin-bottom:12px;">Borrowing by category</h3>
-        <?php if (empty($by_category)): ?><p class="muted">No data yet.</p><?php endif; ?>
-        <?php $cat_max = max(1, max(array_column($by_category, 'total') ?: [1])); ?>
-        <?php foreach ($by_category as $c): ?>
+        <?php if (empty($by_category)): ?><p class="muted">No items handed over in this range.</p><?php endif; ?>
+        <?php $cat_max = max(1, max($by_category ?: [1])); ?>
+        <?php foreach ($by_category as $cname => $ctotal): ?>
             <div class="hbar-row">
-                <span><?= e($c['name']) ?></span>
-                <div class="hbar-track"><div class="hbar-fill" style="width:<?= round(100 * $c['total'] / $cat_max) ?>%;"></div></div>
-                <span class="hbar-value"><?= (int)$c['total'] ?></span>
+                <span><?= e($cname) ?></span>
+                <div class="hbar-track"><div class="hbar-fill" style="width:<?= round(100 * $ctotal / $cat_max) ?>%;"></div></div>
+                <span class="hbar-value"><?= (int)$ctotal ?></span>
             </div>
         <?php endforeach; ?>
     </div>
 
     <div class="chart-box">
         <h3 style="margin-bottom:12px;">Requests by status</h3>
-        <?php $st_max = max(1, max(array_map('intval', $status_rows ?: [1]))); ?>
-        <?php foreach ($status_chart as $key => [$label, $color_name]): $n = (int)($status_rows[$key] ?? 0); ?>
+        <?php $st_max = max(1, max($by_status ?: [1])); ?>
+        <?php foreach ($status_chart as $key => [$label, $color_name]): $n = (int)($by_status[$key] ?? 0); ?>
             <div class="hbar-row">
                 <span><?= e($label) ?></span>
                 <div class="hbar-track"><div class="hbar-fill <?= e($color_name) ?>" style="width:<?= round(100 * $n / $st_max) ?>%;"></div></div>
@@ -220,10 +228,9 @@ if (preg_match('/^\d{4}-\d{2}$/', $sel_month)) {
     <div class="chart-box">
         <h3 style="margin-bottom:12px;">On-time vs late returns</h3>
         <?php if ($returns_total === 0): ?>
-            <p class="muted">No returns yet.</p>
+            <p class="muted">No returns in this range.</p>
         <?php else: ?>
         <div class="pie-wrap">
-            <!-- conic-gradient draws the pie: green from 0% to X%, red from X% to 100% -->
             <div class="pie" style="background: conic-gradient(#2DA43C 0 <?= $on_time_pct ?>%, #E02424 <?= $on_time_pct ?>% 100%);"></div>
             <div class="legend">
                 <div><i style="background:#2DA43C"></i> On time: <?= $on_time ?> (<?= $on_time_pct ?>%)</div>
@@ -234,12 +241,12 @@ if (preg_match('/^\d{4}-\d{2}$/', $sel_month)) {
     </div>
 
     <div class="chart-box">
-        <h3 style="margin-bottom:12px;">Damage reports &amp; fines (last 6 months)</h3>
-        <?php foreach ($damage_months as $dm): ?>
-            <div class="hbar-row" style="grid-template-columns:50px 1fr 120px;">
+        <h3 style="margin-bottom:12px;">Damage reports &amp; fines per month</h3>
+        <?php foreach ($months as $dm): ?>
+            <div class="hbar-row" style="grid-template-columns:60px 1fr 130px;">
                 <span><?= e($dm['label']) ?></span>
-                <div class="hbar-track"><div class="hbar-fill red" style="width:<?= round(100 * $dm['count'] / $max_damage) ?>%;"></div></div>
-                <span class="hbar-value" style="text-align:right;"><?= (int)$dm['count'] ?> · <?= e(format_rupiah($dm['fines'])) ?></span>
+                <div class="hbar-track"><div class="hbar-fill red" style="width:<?= round(100 * $dm['damage'] / $max_damage) ?>%;"></div></div>
+                <span class="hbar-value" style="text-align:right;"><?= (int)$dm['damage'] ?> · <?= e(format_rupiah($dm['fines'])) ?></span>
             </div>
         <?php endforeach; ?>
         <p class="field-hint"><a href="damage_reports.php">Open the Damage Reports →</a></p>
@@ -252,24 +259,19 @@ if (preg_match('/^\d{4}-\d{2}$/', $sel_month)) {
         <thead><tr><th>Rank</th><th>Item</th><th>Category</th><th>Times borrowed</th></tr></thead>
         <tbody>
             <?php if (empty($top_items)): ?>
-                <tr><td colspan="4" class="muted" style="text-align:center;">No data yet.</td></tr>
-            <?php else: ?>
-                <?php foreach ($top_items as $rank => $it): ?>
+                <tr><td colspan="4" class="muted" style="text-align:center;">No items handed over in this range.</td></tr>
+            <?php else: foreach ($top_items as $rank => $it): ?>
                 <tr>
                     <td><?= $rank + 1 ?></td>
                     <td><?= e($it['name']) ?></td>
                     <td><?= e($it['category']) ?></td>
                     <td><?= (int)$it['times'] ?></td>
                 </tr>
-                <?php endforeach; ?>
-            <?php endif; ?>
+            <?php endforeach; endif; ?>
         </tbody>
     </table>
 </div>
 
-<div style="margin-top:22px;">
-    <!-- A normal link: the browser downloads whatever api/export_report.php sends -->
-    <a href="api/export_report.php" class="btn btn-outline" style="padding:11px 22px;">Export report (CSV)</a>
-</div>
+<?php endif; ?>
 
 <?php include 'includes/footer.php'; ?>

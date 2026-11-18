@@ -215,6 +215,7 @@ function loadLoanPhotos(loanId, phase, container, onLoaded) {
 
             data.items.forEach(function (it) {
                 var box = document.createElement('div');  box.className = 'photo-item';
+                box.setAttribute('data-item', it.item_id);   // lets the Process-return pop-up show only damaged items
                 var title = document.createElement('h4');
                 title.textContent = it.name + ' (' + it.code + ') x' + it.qty;
                 var holder = document.createElement('div');
@@ -240,3 +241,148 @@ function loadLoanPhotos(loanId, phase, container, onLoaded) {
         })
         .catch(function () { container.textContent = 'Could not load the photos.'; });
 }
+
+/* ------------------------------------------------------------
+   5. ITEM GALLERY + FULL-SCREEN VIEWER  (angles of an item)
+   A) <div class="gallery" data-photos='[{"src":"...","label":"Front"}, ...]'> with arrows
+      that swap the picture; clicking the picture opens the viewer.
+   B) The viewer: big picture, big arrows, thumbnails, keyboard (← → Esc), swipe on phones.
+   C) <a class="lb" data-group="x" data-label="Front" href="photo.jpg"> opens the viewer
+      with ALL links of the same data-group as its pages.
+   ------------------------------------------------------------ */
+var lightbox = null;
+var lbPhotos = [];
+var lbIndex  = 0;
+var lbOnChange = null;        // tells the small gallery which photo is shown now
+
+function buildLightbox() {
+    if (lightbox) return;
+    lightbox = document.createElement('div');
+    lightbox.className = 'lightbox';
+    lightbox.innerHTML =
+        '<button type="button" class="lb-close" aria-label="Close">×</button>' +
+        '<div class="lb-stage">' +
+            '<div class="lb-frame">' +
+                '<button type="button" class="lb-arrow lb-prev" aria-label="Previous angle">‹</button>' +
+                '<img alt="">' +
+                '<button type="button" class="lb-arrow lb-next" aria-label="Next angle">›</button>' +
+            '</div>' +
+            '<div class="lb-caption"></div>' +
+        '</div>' +
+        '<div class="lb-thumbs"></div>';
+    document.body.appendChild(lightbox);
+
+    lightbox.querySelector('.lb-close').onclick = closeLightbox;
+    lightbox.querySelector('.lb-prev').onclick  = function (e) { e.stopPropagation(); lbShow(lbIndex - 1); };
+    lightbox.querySelector('.lb-next').onclick  = function (e) { e.stopPropagation(); lbShow(lbIndex + 1); };
+
+    // Click anywhere on the dark area (outside the picture, the arrows and the thumbnails) closes the viewer
+    lightbox.addEventListener('click', function (e) {
+        if (e.target === lightbox || e.target.classList.contains('lb-stage')) closeLightbox();
+    });
+
+    // Keyboard: ← → change angle, Esc closes
+    document.addEventListener('keydown', function (e) {
+        if (!lightbox.classList.contains('open')) return;
+        if (e.key === 'ArrowLeft')  { e.preventDefault(); lbShow(lbIndex - 1); }
+        if (e.key === 'ArrowRight') { e.preventDefault(); lbShow(lbIndex + 1); }
+        if (e.key === 'Escape')     closeLightbox();
+    });
+
+    // Swipe on phones
+    var startX = null;
+    lightbox.addEventListener('touchstart', function (e) { startX = e.touches[0].clientX; }, { passive: true });
+    lightbox.addEventListener('touchend', function (e) {
+        if (startX === null) return;
+        var dx = e.changedTouches[0].clientX - startX;
+        if (Math.abs(dx) > 50) lbShow(lbIndex + (dx < 0 ? 1 : -1));
+        startX = null;
+    });
+}
+
+function openLightbox(photos, index, onChange) {
+    buildLightbox();
+    lbPhotos = photos;
+    lbOnChange = onChange || null;
+
+    var thumbs = lightbox.querySelector('.lb-thumbs');
+    thumbs.innerHTML = '';
+    photos.forEach(function (p, i) {
+        var b = document.createElement('button');
+        b.type = 'button';
+        b.setAttribute('aria-label', p.label);
+        var im = document.createElement('img');
+        im.src = p.src; im.alt = p.label;
+        b.appendChild(im);
+        b.onclick = function (e) { e.stopPropagation(); lbShow(i); };
+        thumbs.appendChild(b);
+    });
+
+    var many = photos.length > 1;                       // one picture only -> no arrows / thumbnails
+    lightbox.querySelector('.lb-prev').style.display = many ? '' : 'none';
+    lightbox.querySelector('.lb-next').style.display = many ? '' : 'none';
+    thumbs.style.display = many ? '' : 'none';
+
+    lightbox.classList.add('open');
+    lbShow(index);
+}
+
+function lbShow(i) {
+    lbIndex = (i + lbPhotos.length) % lbPhotos.length;  // wraps: after the last comes the first
+    var p = lbPhotos[lbIndex];
+    lightbox.querySelector('.lb-stage img').src = p.src;
+    lightbox.querySelector('.lb-stage img').alt = p.label;
+    lightbox.querySelector('.lb-caption').textContent = p.label + (lbPhotos.length > 1 ? '  ·  ' + (lbIndex + 1) + ' / ' + lbPhotos.length : '');
+    lightbox.querySelectorAll('.lb-thumbs button').forEach(function (b, n) { b.classList.toggle('current', n === lbIndex); });
+    if (lbOnChange) lbOnChange(lbIndex);
+}
+
+function closeLightbox() {
+    if (lightbox) lightbox.classList.remove('open');
+}
+
+// ---- A) small galleries on cards ----
+function initGalleries() {
+    document.querySelectorAll('.gallery[data-photos]').forEach(function (box) {
+        if (box.getAttribute('data-ready')) return;
+        box.setAttribute('data-ready', '1');
+
+        var photos;
+        try { photos = JSON.parse(box.getAttribute('data-photos')); } catch (e) { return; }
+        if (!photos.length) return;
+
+        var img   = box.querySelector('img');
+        var count = box.querySelector('.gallery-count');
+        var index = 0;
+
+        function show(i) {
+            index = (i + photos.length) % photos.length;
+            img.src = photos[index].src;
+            img.alt = photos[index].label;
+            if (count) count.setAttribute('data-text', photos[index].label + ' · ' + (index + 1) + '/' + photos.length);
+        }
+
+        box.querySelectorAll('.gallery-arrow').forEach(function (btn) {
+            btn.addEventListener('click', function (e) {
+                e.preventDefault(); e.stopPropagation();
+                show(index + (btn.classList.contains('next') ? 1 : -1));
+            });
+        });
+
+        // Click on the picture = big viewer, starting at the angle shown now
+        img.addEventListener('click', function () { openLightbox(photos, index, show); });
+    });
+}
+
+// ---- C) links that open the viewer ----
+document.addEventListener('click', function (e) {
+    var link = e.target.closest ? e.target.closest('a.lb') : null;
+    if (!link) return;
+    e.preventDefault();
+    var group = link.getAttribute('data-group');
+    var links = [].slice.call(document.querySelectorAll('a.lb')).filter(function (a) { return a.getAttribute('data-group') === group; });
+    openLightbox(links.map(function (a) { return { src: a.getAttribute('href'), label: a.getAttribute('data-label') || '' }; }), links.indexOf(link));
+});
+
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initGalleries);
+else initGalleries();

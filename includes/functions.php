@@ -59,17 +59,36 @@ function img_slot(string $base, string $class = '', string $alt = ''): string
     // Keep only safe characters so nobody can sneak in "../" tricks.
     $base = preg_replace('/[^A-Za-z0-9_\-\/]/', '', $base);
 
-    foreach (['png', 'jpg', 'jpeg', 'webp', 'svg', 'gif'] as $ext) {
-        $relative = $base . '.' . $ext;                       // e.g. logo.png
-        if (is_file(__DIR__ . '/../assets/img/' . $relative)) { // does the file exist on disk?
-            return '<img src="assets/img/' . e($relative) . '" alt="' . e($alt)
-                 . '" class="' . e($class) . '">';
+    // WHERE IMAGES LIVE (two folders, two jobs):
+    //   uploads/branding/  = images CHANGED from the website (e.g. admin uploads a new logo in Settings)
+    //   assets/img/        = STATIC images that ship with the site and never change (default logo, banner, placeholder)
+    // The changed copy in uploads/ wins; if there is none, the static one is used.
+    $folders = ['uploads/branding/', 'assets/img/'];
+
+    foreach ($folders as $folder) {
+        foreach (['png', 'jpg', 'jpeg', 'webp', 'svg', 'gif'] as $ext) {
+            $relative = $folder . $base . '.' . $ext;
+            if (is_file(__DIR__ . '/../' . $relative)) {
+                // filemtime makes the browser reload the picture after it was replaced
+                return '<img src="' . e($relative) . '?v=' . filemtime(__DIR__ . '/../' . $relative)
+                     . '" alt="' . e($alt) . '" class="' . e($class) . '">';
+            }
         }
     }
 
     // File not found -> blank placeholder. Hover over it to see the file name it wants.
     return '<div class="img-placeholder ' . e($class) . '" '
          . 'title="Put your image here: assets/img/' . e($base) . '.png"></div>';
+}
+
+/**
+ * item_placeholder_html()  —  the picture shown for an item that has NO uploaded photo yet.
+ * It is a STATIC file (assets/img/item-placeholder.svg). Real item photos are only
+ * ever read from uploads/items/<item id>/ (one place, no second folder to keep in sync).
+ */
+function item_placeholder_html(string $name = ''): string
+{
+    return '<img src="assets/img/item-placeholder.svg" alt="' . e($name ?: 'No photo yet') . '" class="item-placeholder">';
 }
 
 /* ============================================================
@@ -246,7 +265,20 @@ function flash_render(): string
     if (empty($_SESSION['flash'])) return '';
     $flash = $_SESSION['flash'];
     unset($_SESSION['flash']);   // show only once
-    return '<div class="alert alert-' . e($flash['type']) . '">' . e($flash['msg']) . '</div>';
+
+    if (!USE_BOOTSTRAP) {
+        return '<div class="alert alert-' . e($flash['type']) . '">' . e($flash['msg']) . '</div>';
+    }
+
+    // Bootstrap TOAST in the top-right corner (it fades away by itself; errors stay a bit longer)
+    $style = ['success' => 'text-bg-success', 'danger' => 'text-bg-danger', 'info' => 'text-bg-primary'];
+    $cls   = $style[$flash['type']] ?? 'text-bg-primary';
+    $delay = $flash['type'] === 'danger' ? 9000 : 6000;
+    return '<div class="toast-container position-fixed top-0 end-0 p-3" style="z-index:3000;">'
+         . '<div class="toast gt-flash align-items-center border-0 ' . $cls . '" role="alert" aria-live="assertive" aria-atomic="true" data-gt-show data-bs-delay="' . $delay . '">'
+         . '<div class="d-flex"><div class="toast-body">' . e($flash['msg']) . '</div>'
+         . '<button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>'
+         . '</div></div></div>';
 }
 
 /* ============================================================
@@ -362,25 +394,27 @@ function delete_photo_file(?string $path): void
 /**
  * photo_box()  —  one photo for display (read-only), or a blank box if missing.
  */
-function photo_box(?string $path, string $alt = ''): string
+function photo_box(?string $path, string $alt = '', string $group = ''): string
 {
     if ($path) {
-        return '<a href="' . e($path) . '" target="_blank"><img src="' . e($path) . '" alt="' . e($alt) . '"></a>';
+        // With a $group, clicking opens the full-screen viewer with all photos of that group
+        $viewer = $group !== '' ? ' class="lb" data-group="' . e($group) . '" data-label="' . e($alt) . '"' : '';
+        return '<a href="' . e($path) . '" target="_blank"' . $viewer . '><img src="' . e($path) . '" alt="' . e($alt) . '"></a>';
     }
     return '<span class="photo-empty">No photo</span>';
 }
 
 /**
  * item_photo_html()  —  the picture of an item in the catalog / borrow request.
- * Uses the admin-uploaded FRONT photo if there is one; otherwise falls back to
- * assets/img/items/<CODE>.png (the old blank-slot method).
+ * Uses the admin-uploaded FRONT photo (uploads/items/<id>/) if there is one;
+ * otherwise the static placeholder.
  */
 function item_photo_html(?string $front_path, string $code, string $name): string
 {
     if ($front_path && is_file(__DIR__ . '/../' . $front_path)) {
         return '<img src="' . e($front_path) . '" alt="' . e($name) . '">';
     }
-    return img_slot('items/' . $code, '', $name);
+    return item_placeholder_html($name);
 }
 
 /* ------------------------------------------------------------
@@ -479,8 +513,9 @@ function item_jurusan(int $item_id): string
  * missing_photo_sides()  —  which REQUIRED photos are still missing for a loan?
  * Returns a list of readable messages, e.g. ["Epson Projector: Front, Left"].
  * An empty list means everything required is there.   $phase = 'pickup' or 'return'
+ * $only_item_ids (optional) limits the check to those item ids; null = every item of the loan.
  */
-function missing_photo_sides(PDO $pdo, int $loan_id, string $phase): array
+function missing_photo_sides(PDO $pdo, int $loan_id, string $phase, ?array $only_item_ids = null): array
 {
     $stmt = $pdo->prepare("SELECT li.item_id, i.name FROM loan_items li JOIN items i ON i.id = li.item_id WHERE li.loan_id = ? ORDER BY i.name");
     $stmt->execute([$loan_id]);
@@ -488,6 +523,8 @@ function missing_photo_sides(PDO $pdo, int $loan_id, string $phase): array
 
     $problems = [];
     foreach ($stmt->fetchAll() as $it) {
+        // $only_item_ids = check just these items (used for returns: only DAMAGED items need photos)
+        if ($only_item_ids !== null && !in_array((int)$it['item_id'], $only_item_ids, true)) continue;
         $missing = [];
         foreach (PHOTO_REQUIRED as $side) {
             if (empty($have[$it['item_id']][$phase][$side])) $missing[] = PHOTO_SIDES[$side];
@@ -514,8 +551,8 @@ function render_photo_compare(array $items, array $photos): string
             $pick = $photos[$id]['pickup'][$side] ?? null;
             $ret  = $photos[$id]['return'][$side] ?? null;
             if (!$pick && !$ret) continue;       // skip sides nobody photographed
-            $html .= '<tr><td>' . e($label) . '</td><td class="photo-cell">' . photo_box($pick, $label . ' at pick-up') . '</td>'
-                   . '<td class="photo-cell">' . photo_box($ret, $label . ' at return') . '</td></tr>';
+                    $html .= '<tr><td>' . e($label) . '</td><td class="photo-cell">' . photo_box($pick, $label . ' at pick-up', 'item-' . $id) . '</td>'
+                   . '<td class="photo-cell">' . photo_box($ret, $label . ' at return', 'item-' . $id) . '</td></tr>';
         }
         $html .= '</tbody></table></div></div>';
     }
@@ -540,3 +577,79 @@ function format_rupiah($amount): string
 {
     return 'Rp ' . number_format((float)$amount, 0, ',', '.');
 }
+
+/**
+ * item_gallery_html()  —  the picture of an item WITH ARROWS to see the other angles.
+ * $photos = what item_photos($item_id) returns: ['front' => 'uploads/...', 'back' => ..., ...]
+ * Angles are shown in this order: front, back, left, right, top.
+ *   2+ photos : picture + ‹ › arrows + "Front · 1/5" badge; click the picture = full-screen viewer
+ *   1 photo   : just the picture (click to enlarge)
+ *   no photo  : the static placeholder (assets/img/item-placeholder.svg)
+ */
+function item_gallery_html(array $photos, string $code, string $name): string
+{
+    $list = [];
+    foreach (PHOTO_SIDES as $side => $label) {
+        if (!empty($photos[$side]) && is_file(__DIR__ . '/../' . $photos[$side])) {
+            $list[] = ['src' => $photos[$side], 'label' => $label];
+        }
+    }
+    if (!$list) return item_placeholder_html($name);
+
+    $html = '<div class="gallery" data-photos="' . e(json_encode($list)) . '">'
+          . '<img src="' . e($list[0]['src']) . '" alt="' . e($name) . '">';
+    if (count($list) > 1) {
+        $html .= '<button type="button" class="gallery-arrow prev" aria-label="Previous angle">‹</button>'
+               . '<button type="button" class="gallery-arrow next" aria-label="Next angle">›</button>'
+               . '<span class="gallery-count" data-text="' . e($list[0]['label'] . ' · 1/' . count($list)) . '"></span>';
+    }
+    return $html . '</div>';
+}
+
+/**
+ * item_thumb_html()  —  ADMIN: small FRONT picture shown beside an item's name.
+ * Click it = the full-screen viewer with every angle of the item (arrows to move
+ * between angles, click the dark area / x / Esc to close). Without a photo it shows
+ * the static placeholder (not clickable).
+ * $item_id = items.id.  The photos are read from uploads/items/<id>/.
+ */
+function item_thumb_html(int $item_id, string $name): string
+{
+    $photos = item_photos($item_id);
+    $list   = [];
+    foreach (PHOTO_SIDES as $side => $label) {
+        if (!empty($photos[$side]) && is_file(__DIR__ . '/../' . $photos[$side])) {
+            $list[$side] = ['src' => $photos[$side], 'label' => $label];
+        }
+    }
+    if (!$list) return '<span class="item-thumb empty" title="No photo yet">' . item_placeholder_html($name) . '</span>';
+
+    $group = 'thumb-' . $item_id . '-' . mt_rand(1000, 9999);   // unique per use, so two lists on one page never mix
+    $first = true;
+    $html  = '';
+    foreach ($list as $side => $p) {
+        $label = $name . ' - ' . $p['label'];
+        if ($first) {   // the visible thumbnail = the front photo (or the first angle that exists)
+            $html .= '<a href="' . e($p['src']) . '" class="lb item-thumb" data-group="' . e($group) . '" data-label="' . e($label) . '" title="Click to enlarge">'
+                   . '<img src="' . e($p['src']) . '" alt="' . e($name) . '"></a>';
+            $first = false;
+        } else {        // other angles: invisible links that only feed the viewer
+            $html .= '<a href="' . e($p['src']) . '" class="lb" hidden data-group="' . e($group) . '" data-label="' . e($label) . '"></a>';
+        }
+    }
+    return $html;
+}
+
+/**
+ * item_name_cell()  —  thumbnail + item name side by side (admin tables).
+ */
+function item_name_cell(int $item_id, string $name, string $extra = ''): string
+{
+    return '<div class="item-cell">' . item_thumb_html($item_id, $name)
+         . '<div class="item-cell-text"><strong>' . e($name) . '</strong>' . ($extra !== '' ? '<small>' . e($extra) . '</small>' : '') . '</div></div>';
+}
+
+// Permission-form helpers for high-clearance items (needs meta_read() above)
+require_once __DIR__ . '/clearance.php';
+// Bootstrap on/off switch + <link>/<script> helpers
+require_once __DIR__ . '/bootstrap_assets.php';

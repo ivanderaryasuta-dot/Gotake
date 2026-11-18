@@ -14,7 +14,7 @@
 // "Got it" marks them as read (api/dismiss_pickup.php) so they do not return.
 // ============================================================
 $popups = [];
-if (($role ?? '') === 'student') {
+if (($role ?? '') === 'student' && empty($hide_popup)) {
     try {
         $stmt = $pdo->prepare("
             SELECT n.id, n.type, n.message,
@@ -41,14 +41,51 @@ $popup_titles = [
     'returned'    => 'Item returned',
     'damage_fine' => 'Damage fine',
     'fine_paid'   => 'Fine paid',
+    'clearance_requested' => 'Permission form needed',
 ];
 ?>
             </div>  <!-- close .content -->
         </main>     <!-- close .main-content -->
     </div>          <!-- close .app-container -->
 
-    <?php if ($popups): ?>
-    <!-- Notification pop-up: same .modal styles as the other pop-ups -->
+    <?php if ($popups && USE_BOOTSTRAP): ?>
+    <!-- Notification pop-up as a Bootstrap TOAST (top right). "x" = remind me later, "Got it" = mark as read. -->
+    <div class="toast-container position-fixed top-0 end-0 p-3" style="z-index:3000;">
+        <div class="toast gt-popup" id="noticeToast" role="alert" aria-live="assertive" aria-atomic="true"
+             data-gt-show data-bs-autohide="false" style="width:min(400px, 92vw);">
+            <div class="toast-header">
+                <strong class="me-auto">Notifications</strong>
+                <small class="text-body-secondary"><?= count($popups) ?> new</small>
+                <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close" title="Remind me later"></button>
+            </div>
+            <div class="toast-body" style="max-height:70vh; overflow-y:auto;">
+                <?php foreach ($popups as $n): ?>
+                    <div class="notice <?= e($n['type']) ?>">
+                        <strong><?= e($popup_titles[$n['type']] ?? 'Notification') ?></strong>
+
+                        <?php if ($n['type'] === 'approved'):
+                            $future = strtotime($n['borrow_date']) > strtotime('today'); ?>
+                            <?= e($n['items']) ?><br>
+                            Pick up at: <?= e($n['location']) ?><br>
+                            <?= $future ? 'Available from: ' : 'Pick up now. Borrow date: ' ?><?= e(format_date($n['borrow_date'])) ?><br>
+                            Return by: <?= e(format_date($n['return_date'])) ?><br>
+                            Bring your <?= e($n['collateral']) ?>; the staff will hold it until you return the item.
+                        <?php else: ?>
+                            <?= e($n['message']) ?>
+                        <?php endif; ?>
+                    </div>
+                <?php endforeach; ?>
+
+                <div class="d-flex flex-wrap gap-2">
+                    <button class="btn btn-primary btn-sm" onclick="dismissNotices()">Got it</button>
+                    <a href="notifications.php" class="btn btn-outline btn-sm">All notifications</a>
+                    <a href="student_borrowings.php" class="btn btn-outline btn-sm">My Borrowings</a>
+                </div>
+            </div>
+        </div>
+    </div>
+    <?php elseif ($popups): ?>
+    <!-- Bootstrap switched off: the old pop-up (same .modal styles as the other pop-ups) -->
     <div class="modal active" id="noticeModal">
         <div class="modal-content">
             <div class="modal-header">
@@ -75,6 +112,7 @@ $popup_titles = [
 
             <div class="btn-row" style="margin-top:6px;">
                 <button class="btn btn-primary" onclick="dismissNotices()">Got it</button>
+                <a href="notifications.php" class="btn btn-outline">All notifications</a>
                 <a href="student_borrowings.php" class="btn btn-outline">My Borrowings</a>
             </div>
         </div>
@@ -106,6 +144,9 @@ $popup_titles = [
     });
     </script>
 
+    <!-- Bootstrap JavaScript (toasts) - on/off switch: includes/bootstrap_assets.php -->
+    <?= bootstrap_script() ?>
+
     <!-- Shared helper functions (modals, fetch, table search) used by many pages -->
     <script src="assets/js/main.js"></script>
 
@@ -115,8 +156,17 @@ $popup_titles = [
     function dismissNotices() {
         postJSON('api/dismiss_pickup.php', {
             ids: <?= json_encode(array_map('intval', array_column($popups, 'id'))) ?>
-        }).then(function () { hideModal('noticeModal'); })
-          .catch(function () { hideModal('noticeModal'); });
+        }).then(closeNotices)
+          .catch(closeNotices);
+    }
+    // Closes the toast (Bootstrap) or the old pop-up
+    function closeNotices() {
+        var toast = document.getElementById('noticeToast');
+        if (toast) {
+            if (window.bootstrap) bootstrap.Toast.getOrCreateInstance(toast).hide(); else toast.style.display = 'none';
+        } else {
+            hideModal('noticeModal');
+        }
     }
     </script>
     <?php endif; ?>

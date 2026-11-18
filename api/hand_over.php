@@ -70,6 +70,16 @@ try {
         ]);
     }
 
+    // ---- Step 2b (NEW): items that need a signed permission form ----
+    $clearance_items = loan_clearance_items($pdo, (int)$loan_id);
+    if ($clearance_items && empty(loan_clearance_state((int)$loan_id)['file'])) {
+        $names = implode(', ', array_column($clearance_items, 'name'));
+        $how   = loan_clearance_state((int)$loan_id)['requested_at']
+            ? 'The student has not uploaded it yet.'
+            : 'Open the loan detail page and press "Ask for permission form" first.';
+        json_out(['success' => false, 'error' => "Cannot hand over yet. A signed permission form is required for: $names.\n\n$how"]);
+    }
+
     // ---- Step 3 (NEW): required pick-up photos ----
     $missing = missing_photo_sides($pdo, (int)$loan_id, 'pickup');
     if (!empty($missing)) {

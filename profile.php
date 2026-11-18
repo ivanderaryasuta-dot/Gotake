@@ -68,7 +68,7 @@ if (!$is_admin) {
 
 <?= flash_render() ?>
 
-<div class="page-narrow">
+<div class="page-wide">
 
     <!-- Big round avatar with initials + name -->
     <div class="profile-head">

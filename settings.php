@@ -8,7 +8,7 @@
  *   version already used for  max_loan_days.
  *
  *     site_name           name shown in the browser tab
- *     site logo           uploaded file -> assets/img/logo.(png|svg|...)
+ *     site logo           uploaded file -> uploads/branding/logo.(png|svg|...)
  *     require_collateral  'true' = students must agree to leave KTM/KTP
  *     max_loan_days       longest allowed loan (a database trigger enforces it)
  *     notify_admin_new_req   e-mail admins about new requests   (saved only)
@@ -19,7 +19,7 @@
  * sent yet (that needs a mail server + scheduled job).
  *
  * LOGO UPLOAD
- *   The file is stored as assets/img/logo.<ext>. Because every page
+ *   The file is stored as uploads/branding/logo.<ext> (the static default stays in assets/img/). Because every page
  *   shows the logo with img_slot('logo'), it appears everywhere at once.
  *   You can also just copy your logo file there by hand.
  * ------------------------------------------------------------
@@ -45,13 +45,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (!in_array($ext, ['png', 'svg', 'jpg', 'jpeg', 'webp'])) throw new Exception('Logo must be .png, .svg, .jpg or .webp');
             if ($_FILES['logo']['size'] > 2 * 1024 * 1024)               throw new Exception('Logo must be smaller than 2 MB.');
 
-            // Remove any older logo.* so the new one is the one that is found
+            // A logo changed from the website is stored in uploads/branding/ (changing files).
+            // The default logo that ships with the site stays untouched in assets/img/ (static),
+            // and is used again if this uploaded one is ever deleted.
+            $dir = __DIR__ . '/uploads/branding';
+            if (!is_dir($dir) && !mkdir($dir, 0755, true)) throw new Exception('Could not create the uploads/branding folder.');
+
+            // Remove any older uploaded logo.* so the new one is the one that is found
             foreach (['png', 'jpg', 'jpeg', 'webp', 'svg', 'gif'] as $old_ext) {
-                $old = __DIR__ . '/assets/img/logo.' . $old_ext;
+                $old = $dir . '/logo.' . $old_ext;
                 if (is_file($old)) unlink($old);
             }
-            if (!move_uploaded_file($_FILES['logo']['tmp_name'], __DIR__ . '/assets/img/logo.' . $ext)) {
-                throw new Exception('Could not save the logo. Is the assets/img folder writable?');
+            if (!move_uploaded_file($_FILES['logo']['tmp_name'], $dir . '/logo.' . $ext)) {
+                throw new Exception('Could not save the logo. Is the uploads folder writable?');
             }
         }
 

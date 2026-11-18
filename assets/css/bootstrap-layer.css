@@ -1,0 +1,14 @@
+/* ============================================================
+   assets/css/bootstrap-layer.css  —  LOADS BOOTSTRAP 5 "UNDER" YOUR OWN STYLES
+   ------------------------------------------------------------
+   @import ... layer(bootstrap) puts Bootstrap in a low-priority CSS LAYER.
+   Everything in assets/css/style.css (not in a layer) always wins over it,
+   so the pages that still use your old classes (.btn, .modal, .alert,
+   .form-control ...) keep their current look. New markup that uses Bootstrap
+   classes (toasts, utilities like d-flex / gap-2) gets Bootstrap's styling.
+
+   TO WORK OFFLINE: download bootstrap.min.css (version 5.3.3) from getbootstrap.com,
+   save it as assets/vendor/bootstrap/bootstrap.min.css (and bootstrap.bundle.min.js
+   next to it) and replace the URL below with:  url("../vendor/bootstrap/bootstrap.min.css")
+   ============================================================ */
+@import url("https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css") layer(bootstrap);

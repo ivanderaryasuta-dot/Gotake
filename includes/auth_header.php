@@ -28,6 +28,7 @@ $site_name  = get_setting($pdo, 'site_name', 'GoTake - Campus Loan System');
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?= e($page_title) ?> - <?= e($site_name) ?></title>
+    <?= bootstrap_head() ?>
     <link rel="stylesheet" href="assets/css/style.css">
 </head>
 <body class="auth-body">

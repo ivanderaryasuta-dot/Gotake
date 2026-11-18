@@ -1,6 +1,7 @@
             </div>  <!-- close .auth-card -->
         </div>      <!-- close .auth-panel -->
     </div>          <!-- close .auth-wrap -->
+    <?= bootstrap_script() ?>
 </body>
 </html>
 <?php
